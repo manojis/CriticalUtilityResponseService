@@ -52,14 +52,14 @@ Required status checks for `main` (check names as GitHub displays them):
 |---|---|
 | `CI result` | CI (aggregates `backend (mvnw verify)`, `frontend (lint, typecheck, test, build)`, `helm lint + kubeconform`, `hadolint`, `actionlint + shellcheck`, `Trivy filesystem scan`, `image backend`, `image frontend`) |
 | `analyze (java-kotlin)`, `analyze (javascript-typescript)`, `analyze (actions)` | CodeQL |
-| `Source branch` | Branch policy (`.github/workflows/branch-policy.yml`); the only check enforced today. `CI result` and CodeQL are added once those workflows are on `main` |
+| `Source branch` | Branch policy (`.github/workflows/branch-policy.yml`) |
 
 ### Branch protection (rulesets)
 `main` (the default branch, targeted as `~DEFAULT_BRANCH`) is protected by two repository rulesets (Settings → Rules → Rulesets). Branch-protection rules are not used.
 
 | Ruleset | Bypass | Rules |
 |---|---|---|
-| `main: protection` | **nobody** (not even admins) | PR required (0 approvals; conversations resolved; stale approvals dismissed), squash only; required check `Source branch` (strict, branch up to date); linear history; no force push; no deletion |
+| `main: protection` | **nobody** (not even admins) | PR required (0 approvals; conversations resolved; stale approvals dismissed), squash only; required checks `Source branch`, `CI result`, `analyze (java-kotlin)`, `analyze (javascript-typescript)`, `analyze (actions)` (strict, branch up to date); linear history; no force push; no deletion |
 | `main: code-owner review` | Repository admin, **only through a PR** (`bypass_mode: pull_request`) | PR needs 1 approval from a code owner (`.github/CODEOWNERS`: `* @manojis`), approval after the last push |
 
 Effect:
@@ -69,7 +69,7 @@ Effect:
 - Only users with write access can merge, and `@manojis` is the only collaborator.
 - Repository settings: squash merge only, auto-merge allowed, head branches deleted after merge.
 
-Inspect: `gh api repos/manojis/CriticalUtilityResponseService/rulesets`. To add `CI result` and the CodeQL `analyze (…)` checks to `main: protection`, run CI on a PR first: a check name only becomes selectable after it has run once. Then update the ruleset in the UI or with `gh api -X PUT repos/manojis/CriticalUtilityResponseService/rulesets/<id>`. The full rule list needs to be sent.
+Inspect: `gh api repos/manojis/CriticalUtilityResponseService/rulesets`. To change the required checks, edit the ruleset in the UI or `gh api -X PUT repos/manojis/CriticalUtilityResponseService/rulesets/<id>` with the full rule list. A new check name only becomes selectable after it has run once.
 
 ## Environments
 | GitHub Environment | Used by | Protection |
