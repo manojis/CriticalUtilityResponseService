@@ -4,7 +4,7 @@
 #   User:  10001:10001, works with a read-only root filesystem when /tmp is writable.
 # Tests run in CI separately, so the image build skips them.
 
-FROM --platform=$BUILDPLATFORM maven:3.9-eclipse-temurin-21 AS build
+FROM --platform=$BUILDPLATFORM maven:3.9-eclipse-temurin-26 AS build
 WORKDIR /workspace
 COPY .mvn/ .mvn/
 COPY mvnw pom.xml ./
