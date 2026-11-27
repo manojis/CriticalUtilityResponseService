@@ -8,7 +8,7 @@
 #     Mounting /var/cache/nginx and /etc/nginx/conf.d as well (per §4.5) is harmless.
 
 # ---- build stage: runs natively on the build host, output is platform-independent ----------
-FROM --platform=$BUILDPLATFORM node:24-alpine AS build
+FROM --platform=$BUILDPLATFORM node:26-alpine AS build
 WORKDIR /app
 ENV CI=true \
     NPM_CONFIG_UPDATE_NOTIFIER=false \
