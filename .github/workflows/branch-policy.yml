@@ -1,0 +1,32 @@
+# Only short-lived topic branches may be merged into main (CONTRIBUTING.md, docs/CICD.md).
+# The job name "Source branch" is a required status check in the "main: protection" ruleset.
+name: Branch policy
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, edited]
+
+permissions: {}
+
+concurrency:
+  group: branch-policy-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  source-branch:
+    name: Source branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check the PR head branch name
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          pattern='^(feat|fix|docs|ci|chore|refactor|test|agent|dependabot)/[A-Za-z0-9._/-]+$'
+          if [[ "$HEAD_REF" =~ $pattern ]]; then
+            echo "Branch '$HEAD_REF' is allowed."
+          else
+            echo "::error::Branch '$HEAD_REF' may not be merged into main. Use feat/, fix/, docs/, ci/, chore/, refactor/ or test/ (agent/ and dependabot/ are also allowed)."
+            exit 1
+          fi
