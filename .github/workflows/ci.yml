@@ -69,7 +69,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "24"
+          node-version: "26"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
@@ -158,6 +158,54 @@ jobs:
             fi
           done
           exit "$status"
+
+  mysql-upgrade:
+    # Upgrades a seeded data volume from the MySQL version on the base commit to the one in this
+    # commit, as the StatefulSet does on deploy (docs/RUNBOOK.md "Upgrading MySQL").
+    name: MySQL in-place upgrade
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # LTS releases MySQL must pass through: it only upgrades in place within a lineage or from the
+      # immediately preceding LTS (8.4 -> 9.7 -> 26.x). Steps outside (base, new) are skipped.
+      MYSQL_UPGRADE_VIA: "9.7.4.1"
+      BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Resolve upgrade path
+        id: path
+        run: |
+          chart_tag() {
+            git show "$1:deploy/helm/erms/values.yaml" | awk '
+              /^mysql:/ { m = 1; next }
+              m && /^[^ #]/ { m = 0 }
+              m && /^    tag:/ { gsub(/["'"'"' ]/, "", $2); print $2; exit }'
+          }
+          gt() { [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n1)" = "$1" ]; }
+          to=$(chart_tag HEAD)
+          from=$to
+          if [ -n "$BASE_SHA" ] && git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            from=$(chart_tag "$BASE_SHA")
+          fi
+          for f in docker-compose.yml backend/src/test/java/edu/gatech/erms/support/TestcontainersConfiguration.java; do
+            grep -qE "mysql:${to//./\\.}(\"|$)" "$f" || { echo "::error file=$f::MySQL image must match the chart (mysql:$to)"; exit 1; }
+          done
+          chain=$from
+          for v in $MYSQL_UPGRADE_VIA; do
+            if gt "$v" "$from" && gt "$to" "$v"; then chain="$chain $v"; fi
+          done
+          chain="$chain $to"
+          echo "upgrade path: $chain"
+          echo "chain=$chain" >> "$GITHUB_OUTPUT"
+      - name: Seed, upgrade and verify
+        env:
+          CHAIN: ${{ steps.path.outputs.chain }}
+        run: |
+          # shellcheck disable=SC2086 # CHAIN is a space-separated list of tags
+          scripts/mysql-upgrade-test.sh $CHAIN
 
   security:
     name: Trivy filesystem scan
@@ -330,7 +378,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: always()
-    needs: [backend, frontend, helm, dockerfiles, infra-lint, security, images]
+    needs: [backend, frontend, helm, dockerfiles, infra-lint, mysql-upgrade, security, images]
     steps:
       - name: Check job results
         env:

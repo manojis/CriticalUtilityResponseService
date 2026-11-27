@@ -11,7 +11,8 @@ flowchart LR
         P1[backend: mvnw verify] --- P2[frontend: lint/type/test/build]
         P2 --- P3[helm lint + kubeconform]
         P3 --- P4[hadolint + actionlint + shellcheck]
-        P4 --- P5[Trivy fs + SARIF]
+        P4 --- P4b[MySQL in-place upgrade test]
+        P4b --- P5[Trivy fs + SARIF]
         P5 --- P6[images: build amd64, no push, Trivy image]
         P7[CodeQL java + ts]
     end
@@ -37,7 +38,7 @@ flowchart LR
 | `.github/workflows/codeql.yml` | CodeQL | push/PR to main, weekly (Mon 04:27 UTC), `workflow_dispatch` | ubuntu-latest | `contents: read`, `security-events: write` |
 | `.github/dependabot.yml` | – | weekly (Monday): maven, npm, docker, docker-compose, helm, github-actions; minor/patch grouped | – | – |
 
-CI jobs: `backend` (`./mvnw -B -ntp verify` + reports), `frontend` (`npm ci`, lint, format:check, typecheck, test:coverage, build), `helm` (helm lint `--strict` with local and default values, kubeconform `-strict` against Kubernetes 1.36.0 for the local values and a production-style render), `dockerfiles` (hadolint, threshold `warning`), `infra-lint` (actionlint, shellcheck, and a guard that fails if any workflow combines `self-hosted` with a `pull_request` trigger), `security` (Trivy fs: vuln + secret + misconfig, SARIF upload, fails on CRITICAL; accepted findings live in `.trivyignore.yaml`, each scoped to one file with a reason), `images` (matrix backend/frontend; see below), `ci-result` (aggregates everything into one required check).
+CI jobs: `backend` (`./mvnw -B -ntp verify` + reports), `frontend` (`npm ci`, lint, format:check, typecheck, test:coverage, build), `helm` (helm lint `--strict` with local and default values, kubeconform `-strict` against Kubernetes 1.36.0 for the local values and a production-style render), `dockerfiles` (hadolint, threshold `warning`), `infra-lint` (actionlint, shellcheck, and a guard that fails if any workflow combines `self-hosted` with a `pull_request` trigger), `mysql-upgrade` (seeds a volume with the Flyway migrations and demo seed on the MySQL version of the base commit, restarts it on every LTS listed in `MYSQL_UPGRADE_VIA` and then on the new chart version, and checks the version, `CHECK TABLE` and per-table row counts and checksums; it also fails if `docker-compose.yml` or the Testcontainers image differ from the chart; see [RUNBOOK.md](RUNBOOK.md) procedure 14), `security` (Trivy fs: vuln + secret + misconfig, SARIF upload, fails on CRITICAL; accepted findings live in `.trivyignore.yaml`, each scoped to one file with a reason), `images` (matrix backend/frontend; see below), `ci-result` (aggregates everything into one required check).
 
 The `images` job builds `linux/amd64` + `linux/arm64` with buildx and pushes `ghcr.io/manojis/erms-{backend,frontend}:<sha>` and `:latest` with SBOM and provenance attestations **only on push to main**, then Trivy-scans the pushed sha (SARIF + gate on fixable CRITICAL). On pull requests and manual runs it builds `linux/amd64` only (`push: false`, `load: true`) and Trivy-scans the local image.
 
@@ -50,7 +51,7 @@ Required status checks for `main` (check names as GitHub displays them):
 
 | Check | Workflow |
 |---|---|
-| `CI result` | CI (aggregates `backend (mvnw verify)`, `frontend (lint, typecheck, test, build)`, `helm lint + kubeconform`, `hadolint`, `actionlint + shellcheck`, `Trivy filesystem scan`, `image backend`, `image frontend`) |
+| `CI result` | CI (aggregates `backend (mvnw verify)`, `frontend (lint, typecheck, test, build)`, `helm lint + kubeconform`, `hadolint`, `actionlint + shellcheck`, `MySQL in-place upgrade`, `Trivy filesystem scan`, `image backend`, `image frontend`) |
 | `analyze (java-kotlin)`, `analyze (javascript-typescript)`, `analyze (actions)` | CodeQL |
 | `Source branch` | Branch policy (`.github/workflows/branch-policy.yml`) |
 

@@ -1,4 +1,4 @@
-# ERMS local development stack (no Kubernetes): MySQL 8.4 + backend + frontend.
+# ERMS local development stack (no Kubernetes): MySQL 26.10 + backend + frontend.
 #
 #   docker compose up --build -d      # or: make up
 #   open http://localhost:3000        # app (nginx proxies /api to the backend)

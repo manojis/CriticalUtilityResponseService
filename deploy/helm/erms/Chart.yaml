@@ -1,6 +1,6 @@
 apiVersion: v2
 name: erms
-description: Emergency Resource Management System (ERMS) - Spring Boot API, React SPA and MySQL 8.4
+description: Emergency Resource Management System (ERMS) - Spring Boot API, React SPA and MySQL 26.10
 type: application
 version: 0.1.0
 appVersion: "0.1.0"

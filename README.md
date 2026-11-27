@@ -7,9 +7,9 @@ Users register **resources** (equipment and people, classified by FEMA Emergency
 
 | Layer | Stack |
 |---|---|
-| Backend (`backend/`) | Java 21, Spring Boot 4.1, JdbcTemplate, Flyway, Spring Security (stateless JWT), Actuator/Prometheus |
+| Backend (`backend/`) | Java 21 (runs on the Java 25 JRE), Spring Boot 4.2, JdbcTemplate, Flyway, Spring Security (stateless JWT), Actuator/Prometheus |
 | Frontend (`frontend/`) | Vite, React 19, TypeScript (strict), MUI, served by nginx-unprivileged |
-| Database | MySQL 8.4 LTS |
+| Database | MySQL 26.10 (Innovation release) |
 | Platform (`deploy/`, `.github/`, `scripts/`) | Helm chart, GitHub Actions CI (hosted) + CD (self-hosted runner) to Rancher Desktop k3s |
 
 ## Architecture

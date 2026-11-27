@@ -76,7 +76,7 @@ Rules: no secrets in git, images or ConfigMaps (the backend ConfigMap holds only
 | NetworkPolicies: mysql:3306 only from backend pods; backend:8080 from the ingress-controller namespace (`kube-system`) and frontend pods; backend 8080/8081 and frontend 8080 from `helm test` pods (`app.kubernetes.io/component: test`); frontend:8080 from the ingress-controller namespace | `templates/networkpolicy.yaml` (k3s enforces them with its embedded controller) |
 | Management port 8081 is never routed by the Ingress; the smoke test asserts actuator health isn't public | Ingress + `smoke-test.sh` |
 | Resource requests and memory limits on every container; emptyDir `sizeLimit`s | values |
-| Images: application images by immutable git-sha tag; third-party images pinned by exact version (`mysql:8.4.13`, `busybox:1.37.0`, `curlimages/curl:8.23.0`); Dependabot (docker, helm, docker-compose ecosystems) bumps them | values, compose |
+| Images: application images by immutable git-sha tag; third-party images pinned by exact version (`mysql:26.10.0.1`, `busybox:1.38.0`, `curlimages/curl:8.23.0`); Dependabot (docker, helm, docker-compose ecosystems) bumps them | values, compose |
 | docker-compose: ports bound to `127.0.0.1`, `read_only`, `cap_drop: [ALL]`, `no-new-privileges` for backend and frontend | `docker-compose.yml` |
 
 ### CI/CD and runner hardening

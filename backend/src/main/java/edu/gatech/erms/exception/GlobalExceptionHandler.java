@@ -24,6 +24,8 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
@@ -195,6 +197,12 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
   private static void enrich(ProblemDetail problem, String code) {
     if (problem.getType() == null) {
       problem.setType(ABOUT_BLANK);
+    }
+    if (problem.getInstance() == null) {
+      // Spring Framework 7.1 no longer fills in "instance"; keep the request path in every error.
+      if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attrs) {
+        problem.setInstance(URI.create(attrs.getRequest().getRequestURI()));
+      }
     }
     problem.setProperty("code", code);
     String requestId = MDC.get(RequestIdFilter.MDC_KEY);

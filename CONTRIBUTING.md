@@ -6,8 +6,8 @@ Thanks for helping. This guide covers the local setup, the workflow and the rule
 
 | Tool | Version | Notes |
 |---|---|---|
-| Java | 21 (Temurin) | Maven is not needed; use the wrapper `backend/mvnw` |
-| Node.js / npm | 24 LTS (`frontend/.nvmrc`) / 11 | `npm ci` with the committed `package-lock.json` |
+| Java | 21+ (Temurin; the image runs Java 25) | Maven is not needed; use the wrapper `backend/mvnw` |
+| Node.js / npm | 26 LTS (`frontend/.nvmrc`) / 11 | `npm ci` with the committed `package-lock.json` |
 | Docker | Rancher Desktop (moby engine) or Docker Desktop | Needed for Testcontainers, compose and the linters |
 | kubectl, helm | from Rancher Desktop (`~/.rd/bin`) | Helm 4 (Helm 3.x also works with the scripts) |
 | gh | latest | Only for the self-hosted runner setup |

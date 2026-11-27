@@ -1,6 +1,6 @@
 # ERMS Data Model
 
-MySQL 8.4 LTS. The schema is owned by Flyway (`backend/src/main/resources/db/migration`). The authoritative DDL is `V1__schema.sql`; its design is reproduced in [ARCHITECTURE.md §3.9](ARCHITECTURE.md#39-database-flyway-migrations). Owner: backend developer (WP-BE). Any migration updates this file in the same PR.
+MySQL 26.10. The schema is owned by Flyway (`backend/src/main/resources/db/migration`). The authoritative DDL is `V1__schema.sql`; its design is reproduced in [ARCHITECTURE.md §3.9](ARCHITECTURE.md#39-database-flyway-migrations). Owner: backend developer (WP-BE). Any migration updates this file in the same PR.
 
 Conventions: InnoDB, `utf8mb4` / `utf8mb4_0900_ai_ci` (case-insensitive comparisons and `LIKE`), snake_case names, `fk_`/`uq_`/`ck_`/`ix_` constraint prefixes, all dates are `DATE` (no time-of-day), audit timestamps are `TIMESTAMP` in UTC. Migrations are forward-only. **Never edit an applied versioned migration**; add `V<n+1>__…sql` instead.
 
