@@ -50,7 +50,7 @@ flowchart TB
 | backend | `ghcr.io/manojis/erms-backend` | `<git-sha>`, `latest` (main only) | linux/amd64, linux/arm64 |
 | frontend | `ghcr.io/manojis/erms-frontend` | `<git-sha>`, `latest` | linux/amd64, linux/arm64 |
 
-Deployments always use the immutable `<git-sha>` tag (the full 40-character commit sha). Rancher Desktop runs the **moby** engine, which shares its image store with k3s. The CD job runs `docker pull` on the sha tag, and the pods start with `imagePullPolicy: IfNotPresent`, so no pull secret is needed in the cluster.
+Deployments always use the immutable `<git-sha>` tag (the full 40-character commit sha). The GHCR packages are **public**, so k3s pulls the sha images itself and no pull secret is needed; the CD runner has no docker access at all. Rancher Desktop runs the **moby** engine, which shares its image store with k3s, so images built by `make deploy-local` are used directly (`imagePullPolicy: IfNotPresent`).
 
 ## Prerequisites (Rancher Desktop)
 1. Rancher Desktop with **Kubernetes enabled**, container engine **dockerd (moby)**, Traefik enabled.
@@ -92,12 +92,10 @@ make deploy-local
 Options: `--tag TAG`, `--no-build` (use images already in the local store), `--skip-test`, `--skip-smoke`, `--timeout 15m`. Run `scripts/deploy-local.sh --help` for the full list.
 
 ### C. Specific version from GHCR
-Any sha that CI pushed (see the Packages tab or the CI run). Packages linked to this repo can be pulled after `gh auth token | docker login ghcr.io -u <github-user> --password-stdin` (needs the `read:packages` scope: `gh auth refresh -s read:packages`).
+Any sha that CI pushed (see the Packages tab or the CI run). The packages are public, so k3s pulls them directly; the preferred way is `gh workflow run cd.yml -f image_tag=<sha>` (then approve the deployment).
 
 ```bash
 SHA=<full git sha>
-docker pull ghcr.io/manojis/erms-backend:$SHA
-docker pull ghcr.io/manojis/erms-frontend:$SHA
 helm upgrade --install erms deploy/helm/erms --kube-context rancher-desktop -n erms --create-namespace \
   -f deploy/helm/erms/values-local.yaml \
   --set backend.image.tag=$SHA --set frontend.image.tag=$SHA \

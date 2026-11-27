@@ -21,7 +21,7 @@ flowchart LR
         GHCR[(GHCR images)]
     end
     subgraph Mac["Developer Mac"]
-        R[Self-hosted runner<br/>launchd, user account]
+        R[Self-hosted runner<br/>LaunchDaemon, user _ermsrunner<br/>kubeconfig: ns erms only]
         subgraph K3s["Rancher Desktop k3s — ns erms"]
             T[Traefik ingress :80]
             F[frontend nginx :8080]
@@ -57,9 +57,10 @@ See [ARCHITECTURE.md §7](ARCHITECTURE.md#7-security-baseline-owasp-top-10-2021-
 | MySQL root and app passwords | k8s Secret `erms-secrets` (`mysql-root-password`, `mysql-password`) | Helm generates random values on first install (`randAlphaNum 24`), reuses them on every upgrade via `lookup`, `helm.sh/resource-policy: keep` | App password: `ALTER USER`, patch the secret, restart the backend ([RUNBOOK](RUNBOOK.md#9-rotate-secrets)). Local reset: delete the secret **and** the PVC together. Production: `secrets.existingSecret` |
 | JWT secret | `erms-secrets.jwt-secret` | Same as above (`randAlphaNum 48`) | Patch the secret, then `kubectl rollout restart deploy/erms-backend` (existing tokens become invalid) ([RUNBOOK](RUNBOOK.md#9-rotate-secrets)) |
 | External secret (production) | Any Secret named by `secrets.existingSecret` with the same three keys | Created out of band (e.g. External Secrets Operator / Sealed Secrets) | Owner's process; the chart then renders no Secret |
-| GHCR auth (CI push, CD pull) | `GITHUB_TOKEN`, job-scoped (`packages: write` only on the CI `images` job, `packages: read` in CD) | Provided by Actions | Automatic (expires with the job). CD stores it only in a job-scoped `DOCKER_CONFIG` under `$RUNNER_TEMP`, logs out and deletes it after every run |
+| GHCR auth (CI push) | `GITHUB_TOKEN`, job-scoped (`packages: write` only on the CI `images` job) | Provided by Actions | Automatic (expires with the job). CD needs no registry credentials: the packages are public and k3s pulls them anonymously |
 | Runner registration / removal token | Not stored | `gh api -X POST repos/…/actions/runners/{registration,remove}-token` at setup/uninstall (1 h validity), unset after use | n/a |
-| Runner credentials | `~/actions-runner/erms/.credentials*` (user-only files) | Written by `config.sh` | `make runner-uninstall && make runner-setup` |
+| Runner credentials | `/opt/erms-runner/runner/.credentials*` (owned by `_ermsrunner`, directory mode 700) | Written by `config.sh` | `make runner-uninstall && make runner-setup` |
+| Runner kubeconfig (ServiceAccount token, namespace `erms` only) | `/opt/erms-runner/home/.kube/config` (`_ermsrunner`, mode 600); source Secret `erms/erms-deployer-token` | `make runner-setup` | `kubectl --context rancher-desktop -n erms delete secret erms-deployer-token && make runner-setup` |
 | docker-compose dev values | `docker-compose.yml` | Literal `change-me-dev-…` placeholders, labelled **DEV ONLY** | n/a (never used outside compose) |
 
 Rules: no secrets in git, images or ConfigMaps (the backend ConfigMap holds only non-secret settings; passwords and the JWT key are `secretKeyRef`s); `.env*`, keys and kubeconfigs are gitignored; Trivy secret scanning runs in CI; GitHub secret scanning and push protection are enabled by `scripts/setup-local-runner.sh`. `helm template` and client-side dry-runs can't `lookup`, so they print fresh random values. Never apply their output over a live release.
@@ -82,9 +83,10 @@ Rules: no secrets in git, images or ConfigMaps (the backend ConfigMap holds only
 - All third-party actions pinned to full commit SHAs; top-level `permissions: contents: read`, with elevated scopes only on the jobs that need them; `persist-credentials: false` on every checkout.
 - Images published only on push to `main`, multi-arch, with SBOM and `provenance: mode=max`; Trivy fs and image scans gate on CRITICAL, and SARIF goes to code scanning; CodeQL covers Java, TypeScript and the workflows themselves (`actions`).
 - The self-hosted runner is used **only** by `cd.yml` (`workflow_run` from a successful CI **push** on `main` of this repository, or `workflow_dispatch` on `main`); CI fails if any workflow combines `self-hosted` with a `pull_request` trigger.
-- Repository settings applied by `scripts/setup-local-runner.sh`: environment `local` limited to `main`; fork-PR workflow approval for all external contributors; default `GITHUB_TOKEN` read-only and unable to approve PRs; secret scanning + push protection.
-- The runner runs as a per-user LaunchAgent (never root), with a fixed `.path`. Its download is SHA-256 verified against the release notes and GitHub's asset digest. It keeps auto-updating.
-- Residual risk: anyone with write access can run `cd.yml` manually, which executes code from `main` on the Mac. Keep write access limited, and consider adding a required reviewer to environment `local`.
+- Repository settings applied by `scripts/setup-local-runner.sh`: environment `local` limited to `main`, with the repository owner as required reviewer (every deployment waits for approval); fork-PR workflow approval for all external contributors; default `GITHUB_TOKEN` read-only and unable to approve PRs; secret scanning + push protection.
+- The runner runs as the hidden, unprivileged macOS user `_ermsrunner` (no password, no login shell, not an admin) from a system LaunchDaemon, never as your account or root. It cannot read your home directory, has **no access to the Rancher Desktop docker socket** (root-equivalent in the VM), and its kubeconfig is the ServiceAccount `erms/erms-deployer`, which can only manage the chart's resources in namespace `erms` (no cluster-scoped resources, RBAC, `pods/exec` or other namespaces; verified with `kubectl auth can-i` at setup). Its `kubectl`/`helm` are root-owned and its `.path` is fixed. The runner download and `kubectl` are SHA-256 verified. The runner keeps auto-updating.
+- `make runner-stop` stops and disables the service (it stays off across reboots) and `make runner-start` turns it back on, so the runner only exists while you want deployments.
+- Residual risk: an approved job can still use the network as `_ermsrunner`, read world-readable files on the Mac, and change or delete the ERMS release and its data in namespace `erms`. Approve only runs whose commit you recognise on `main`.
 
 ## HTTP security headers (frontend nginx)
 `Content-Security-Policy` (self only; inline styles allowed for MUI/emotion), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`, `server_tokens off`.

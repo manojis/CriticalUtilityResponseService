@@ -1,0 +1,16 @@
+# Accepted Trivy findings, each scoped to the file it applies to. Passed to every Trivy scan in CI.
+misconfigurations:
+  # The CD runner's namespaced deployer Role must manage the chart's resources in namespace erms
+  # (docs/CICD.md "Self-hosted runner"). It has no cluster-scoped, RBAC or pods/exec access.
+  - id: KSV-0048
+    paths: [deploy/runner/deployer-rbac.yaml]
+    statement: Namespaced deployer must manage workloads in erms
+  - id: KSV-0049
+    paths: [deploy/runner/deployer-rbac.yaml]
+    statement: Namespaced deployer must manage the chart ConfigMap
+  - id: KSV-0056
+    paths: [deploy/runner/deployer-rbac.yaml]
+    statement: Namespaced deployer must manage the chart Services, Ingress and NetworkPolicies
+  - id: KSV-0113
+    paths: [deploy/runner/deployer-rbac.yaml]
+    statement: Helm stores releases in Secrets and the chart owns erms-secrets

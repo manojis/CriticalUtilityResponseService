@@ -1,0 +1,81 @@
+# Least-privilege Kubernetes identity for the self-hosted CD runner (docs/CICD.md "Self-hosted runner").
+# Applied once with the admin kubeconfig by scripts/setup-local-runner.sh. The runner gets a
+# kubeconfig for the ServiceAccount below only: it can manage the ERMS release in namespace "erms"
+# and nothing else (no cluster-scoped resources, no other namespaces, no RBAC changes).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: erms
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: erms-deployer
+  namespace: erms
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: erms-deployer-token
+  namespace: erms
+  annotations:
+    kubernetes.io/service-account.name: erms-deployer
+type: kubernetes.io/service-account-token
+---
+# A deployer must manage the workloads, Services, Ingress, NetworkPolicies, ConfigMaps and Secrets
+# of the chart; the Role is confined to namespace erms, which only contains ERMS. The matching Trivy
+# findings (KSV-0048/0049/0056/0113) are accepted for this file only in .trivyignore.yaml.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: erms-deployer
+  namespace: erms
+rules:
+  # Resources the chart creates (Helm also stores release state in Secrets), plus helm test pods.
+  - apiGroups: [""]
+    resources: [pods, services, configmaps, secrets, serviceaccounts, persistentvolumeclaims]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses, networkpolicies]
+    verbs: [get, list, watch, create, update, patch, delete]
+  # Optional chart resources (replicas > 1 or autoscaling.enabled).
+  - apiGroups: [autoscaling]
+    resources: [horizontalpodautoscalers]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [policy]
+    resources: [poddisruptionbudgets]
+    verbs: [get, list, watch, create, update, patch, delete]
+  # Read-only: helm --wait, rollback and scripts/diagnostics.sh.
+  - apiGroups: [""]
+    resources: [pods/log, events, endpoints]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [replicasets, controllerrevisions]
+    verbs: [get, list, watch]
+  - apiGroups: [events.k8s.io]
+    resources: [events]
+    verbs: [get, list, watch]
+  - apiGroups: [discovery.k8s.io]
+    resources: [endpointslices]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: erms-deployer
+  namespace: erms
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: erms-deployer
+subjects:
+  - kind: ServiceAccount
+    name: erms-deployer
+    namespace: erms

@@ -137,9 +137,18 @@ agent-loop: ## Autonomous implement (claude-opus-5.5) ↔ test (non-Claude) loop
 	scripts/agent-loop.sh --task "$(TASK)" $(ARGS)
 
 ##@ Self-hosted runner
-.PHONY: runner-setup runner-uninstall
-runner-setup: ## Install/register the self-hosted runner + repo hardening (idempotent)
+.PHONY: runner-setup runner-start runner-stop runner-status runner-uninstall
+runner-setup: ## Install/register the isolated self-hosted runner + repo hardening (idempotent, sudo)
 	scripts/setup-local-runner.sh
 
-runner-uninstall: ## Unregister and remove the self-hosted runner service
+runner-start: ## Enable and start the runner service (sudo)
+	scripts/setup-local-runner.sh --start
+
+runner-stop: ## Stop the runner service and keep it off across reboots (sudo)
+	scripts/setup-local-runner.sh --stop
+
+runner-status: ## Runner service state and GitHub online/busy status
+	scripts/setup-local-runner.sh --status
+
+runner-uninstall: ## Unregister the runner, remove its service, user, files and RBAC (sudo)
 	scripts/setup-local-runner.sh --uninstall
