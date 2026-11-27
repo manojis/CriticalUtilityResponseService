@@ -22,7 +22,7 @@ COPY src ./src
 RUN npm run build
 
 # ---- runtime stage --------------------------------------------------------------------------
-FROM nginxinc/nginx-unprivileged:1.29-alpine
+FROM nginxinc/nginx-unprivileged:1.31-alpine
 
 ARG VERSION=dev
 ARG REVISION=unknown
