@@ -28,7 +28,7 @@ export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
 3. Open a pull request against `main` and fill in the template. CI must be green (see the required checks in [docs/CICD.md](docs/CICD.md#quality-gates-a-merge-needs-all-green)).
 4. Squash-merge. The merge to `main` builds and publishes the images, and CD deploys them to the Rancher Desktop environment.
 
-`main` is protected by rulesets ([docs/CICD.md](docs/CICD.md#branch-protection-rulesets)): no direct or force pushes, PRs only from the branch prefixes above (plus `agent/…` and `dependabot/…`), squash-merge only, and approval from the code owner (`@manojis`).
+`main` is protected by rulesets ([docs/CICD.md](docs/CICD.md#branch-protection-rulesets)): no direct or force pushes, PRs only from the branch prefixes above (plus `agent/…` and `dependabot/…`), squash-merge only, and only the owner (`@manojis`) can approve and merge.
 
 ## Local commands
 

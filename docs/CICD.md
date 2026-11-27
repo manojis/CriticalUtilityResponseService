@@ -60,13 +60,13 @@ Required status checks for `main` (check names as GitHub displays them):
 | Ruleset | Bypass | Rules |
 |---|---|---|
 | `main: protection` | **nobody** (not even admins) | PR required (0 approvals; conversations resolved; stale approvals dismissed), squash only; required checks `Source branch`, `CI result`, `analyze (java-kotlin)`, `analyze (javascript-typescript)`, `analyze (actions)` (strict, branch up to date); linear history; no force push; no deletion |
-| `main: code-owner review` | Repository admin, **only through a PR** (`bypass_mode: pull_request`) | PR needs 1 approval from a code owner (`.github/CODEOWNERS`: `* @manojis`), approval after the last push |
+| `main: owner approval and merge` | Repository admin (`@manojis`; personal repos have no other admins), **only through a PR** (`bypass_mode: pull_request`) | Restrict updates: nobody else can merge into `main`. PR needs 1 approval from a code owner (`.github/CODEOWNERS`: `* @manojis`), given after the last push |
 
 Effect:
 - Nobody can push to `main` directly; every change is a PR.
 - `Source branch` allows only `feat/`, `fix/`, `docs/`, `ci/`, `chore/`, `refactor/`, `test/`, `agent/` and `dependabot/` heads. No one can bypass it.
 - GitHub never lets authors approve their own PRs, so the owner merges their own PRs with **Merge without waiting for requirements** (`gh pr merge --squash --admin`). This bypasses only the code-owner ruleset. Everyone else needs `@manojis`'s approval.
-- Only users with write access can merge, and `@manojis` is the only collaborator.
+- Only `@manojis` can approve (sole code owner) and merge (restrict updates; only the admin bypasses it). Collaborators with write access can open PRs but cannot merge them, even after approval.
 - Repository settings: squash merge only, auto-merge allowed, head branches deleted after merge.
 
 Inspect: `gh api repos/manojis/CriticalUtilityResponseService/rulesets`. To change the required checks, edit the ruleset in the UI or `gh api -X PUT repos/manojis/CriticalUtilityResponseService/rulesets/<id>` with the full rule list. A new check name only becomes selectable after it has run once.
