@@ -16,13 +16,13 @@ This document plus [API.md](API.md) and [DATA_MODEL.md](DATA_MODEL.md) are **the
 │   ├── pom.xml
 │   └── src/{main,test}/...
 ├── frontend/                # was front-end/ (git mv)
-│   ├── Dockerfile, .dockerignore, nginx/default.conf.template
+│   ├── Dockerfile, .dockerignore, nginx/{nginx.conf,default.conf.template}
 │   ├── package.json, package-lock.json (yarn.lock deleted)
-│   ├── index.html, vite.config.ts, tsconfig*.json, eslint.config.js, .prettierrc
+│   ├── index.html, vite.config.ts, vitest.config.ts, tsconfig*.json, eslint.config.js, .prettierrc.json
 │   └── src/...
 ├── deploy/helm/erms/        # Helm chart
 ├── .github/workflows/{ci.yml,cd.yml,codeql.yml}, .github/dependabot.yml
-├── scripts/{setup-local-runner.sh,smoke-test.sh,deploy-local.sh}
+├── scripts/{setup-local-runner.sh,smoke-test.sh,deploy-local.sh,diagnostics.sh}
 ├── docs/{ARCHITECTURE.md,WORK_PACKAGES.md,adr/}
 ├── docker-compose.yml, Makefile, README.md, .gitignore, .editorconfig
 ```
@@ -316,50 +316,79 @@ ORDER BY e.esf_number;
 ## 4. Frontend
 
 ### 4.1 Stack
-Vite 8 · React 19 · **TypeScript (strict)** · MUI 9 (`@mui/material`, `@mui/icons-material`, emotion) · react-router 7 (data or declarative mode; declarative `<Routes>` is fine) · axios · Vitest + React Testing Library + `@testing-library/user-event` + MSW 2 (API mocks) + jsdom · ESLint 9 flat config (typescript-eslint, react-hooks, jsx-a11y) · Prettier · npm with a committed `package-lock.json`. `.nvmrc` = `24`. Remove `styled-components`, `react-scripts`, `yarn.lock` and all `@material-ui/*`.
+Exact versions are pinned in `frontend/package.json` (`.npmrc` has `save-exact=true`), and `package-lock.json` is committed.
+
+Vite 8.3 · React 19.3 · **TypeScript 6.0 (strict, plus `noUncheckedIndexedAccess`)** · MUI 9.6 (`@mui/material`, `@mui/icons-material`, emotion) · react-router 7.18 (declarative `<Routes>`) · axios 1.x · react-hook-form 7 (with a resolver adapter around the pure validators) · Vitest 5 + v8 coverage · React Testing Library + `@testing-library/user-event` + MSW 2 + jsdom · ESLint 10 flat config (typescript-eslint `strictTypeChecked` + `stylisticTypeChecked`, react-hooks 7, react-refresh, jsx-a11y `strict`, eslint-config-prettier) · Prettier 3. `.nvmrc` = `24`; the engines field requires Node ≥ 24.15. CRA, `styled-components`, `yarn.lock` and all `@material-ui/*` have been removed.
+
+Version notes: **ESLint 10** is used instead of 9 because 9.x is marked "no longer supported" on npm. `eslint-plugin-jsx-a11y` 6.10.2 still declares `eslint ≤ 9` as a peer, so `package.json` `overrides` points its peer at the installed ESLint. **TypeScript 6.0** is the newest version typescript-eslint supports (`<6.1`). TS 7 (the native port) is not supported yet.
 
 ### 4.2 Structure
+The layers are shared infrastructure (`api`, `auth`, `components`, `forms`, `hooks`, `validation`, `utils`) plus one folder per feature under `features/`. Each feature folder holds the page, its page-specific components and their tests.
 ```
 src/
-  main.tsx, App.tsx (routes + ThemeProvider + CssBaseline + AuthProvider)
-  api/client.ts         axios instance: baseURL "/api/v1"; request interceptor adds Bearer token;
-                        response interceptor: 401 → auth.logout() + redirect to /login?expired=1;
-                        error normaliser → { status, title, detail, fieldErrors } from ProblemDetail
-  api/{auth,me,reference,incidents,resources,requests,reports}.ts   typed functions 1:1 with API.md endpoints
-  types/api.ts          TS types mirroring API.md exactly
-  auth/AuthContext.tsx  token + user in sessionStorage (key "erms.auth"); exp checked on load;
-                        login(), logout(), isAuthenticated
-  auth/ProtectedRoute.tsx
-  components/AppLayout.tsx (AppBar: "ERMS", user name + type subtitle, Logout), ConfirmDialog, ErrorAlert, Loading
-  pages/LoginPage, MainMenuPage, AddResourcePage, AddIncidentPage, SearchResourcesPage,
-        ResourceStatusPage, ResourceReportPage, NotFoundPage
-  validation/incident.ts, validation/resource.ts (ported legacy rules, pure functions) + tests
-  test/setup.ts, test/msw/handlers.ts
+  main.tsx                BrowserRouter + <App/>
+  App.tsx                 ThemeProvider + CssBaseline + NotificationProvider + AuthProvider + AppRoutes
+                          (authenticated pages lazy-loaded with React.lazy)
+  theme.ts                legacy colours (#2374AB), system font stack (no web fonts → CSP-friendly)
+  types/api.ts            TS mirror of API.md (requests, responses, enums, ProblemDetail)
+  api/client.ts           axios instance, baseURL "/api/v1"; request interceptor adds the Bearer token from the
+                          stored session (never on /auth/login); response interceptor: 401 from any endpoint except
+                          /auth/login → registered unauthorized handler; every error is normalised to ApiError
+  api/errors.ts           ApiError {status,title,detail,code,requestId,fieldErrors} + ProblemDetail normaliser
+                          (also network/timeout/non-JSON bodies; X-Request-Id header as fallback requestId)
+  api/{auth,me,reference,incidents,resources,requests,reports}.ts   one typed function per API.md endpoint (#1–#18)
+  auth/session.ts         sessionStorage "erms.auth" = {token,user,expiresAt}; JWT exp decoded (not verified);
+                          expired/corrupt entries are removed on read
+  auth/AuthContext.tsx    AuthProvider: login(), logout(), isAuthenticated, user; expiry timer; 401 handler →
+                          clear session + navigate("/login?expired=1", state.from)
+  auth/{context,useAuth}.ts, auth/ProtectedRoute.tsx
+  components/             AppLayout (AppBar "ERMS", user name + user-type label, Logout, skip link), PageHeader,
+                          ErrorAlert (ProblemDetail title/detail/unmapped field errors/requestId), Loading, EmptyState,
+                          ConfirmDialog, NotificationProvider + useNotify (snackbar)
+  forms/formUtils.ts      validatorResolver (pure validator → RHF resolver), applyServerFieldErrors
+                          (ProblemDetail errors[] → field helper texts; "capabilities[0]" maps to "capabilities")
+  hooks/useApiData.ts     loader → {data, error, loading, reload}; aborts on unmount/supersede; keeps stale data
+  validation/{common,incident,resource,request,login}.ts   ported legacy rules as pure functions (+ tests)
+  utils/{date,format}.ts  local "today", ISO date checks, cost/distance/availability/profile-subtitle formatting
+  features/login/LoginPage.tsx
+  features/menu/MainMenuPage.tsx
+  features/incidents/AddIncidentPage.tsx
+  features/resources/{AddResourcePage,CapabilitiesInput,SearchResourcesPage,RequestDialog}.tsx, rowAction.ts, searchParams.ts
+  features/requests/{ResourceStatusPage,RequestsTable}.tsx
+  features/reports/ResourceReportPage.tsx
+  features/errors/NotFoundPage.tsx
+  test/setup.ts, test/render.tsx, test/fixtures.ts, test/msw/{handlers,server}.ts
 ```
 
 ### 4.3 Routes & behaviour
 | Path | Page | Notes |
 |---|---|---|
-| `/login` | LoginPage | Username + password. Shows the API error on 401. Redirects to `/` (or the original location) on success |
-| `/` | MainMenuPage | `GET /me`. Shows name plus a subtitle by type: INDIVIDUAL→jobTitle, COMPANY→headquarters, MUNICIPALITY→municipalityCategory, GOVERNMENT_AGENCY→agencyNameLocalOffice. Links to the 5 pages below |
-| `/resources/new` | AddResourcePage | Owner shown from /me. ESF select (+ multi-select additional ESFs excluding primary), capability chips add/remove, cost + unit select, lat/lon, optional max distance. On 201: success snackbar showing the new id |
-| `/incidents/new` | AddIncidentPage | Declaration select, date (≤ today), description, lat/lon. On 201: show the **server-generated** incidentId |
-| `/resources/search` | SearchResourcesPage | Filters: keyword, ESF (optional), incident (my incidents, optional), distanceKm (enabled only when an incident is selected). Paginated MUI table: id, name, owner, cost/unit, status ("Available" or "In use until YYYY-MM-DD"), distance. Row action when an incident is selected: **Deploy** if `ownerUsername === me && available`, otherwise **Request** → dialog asking for expectedReturnDate → `POST /resource-requests` with `deployImmediately` accordingly |
-| `/resource-status` | ResourceStatusPage | Three tables: "Resources in use" (`role=requester&status=DEPLOYED`, action Return); "Resources requested by me" (`role=requester&status=PENDING`, action Cancel); "Requests received" (`role=owner&status=PENDING`, actions Deploy (disabled unless `resourceAvailable`) and Reject). Refresh the tables after every action |
-| `/reports/resources-by-esf` | ResourceReportPage | Table of 15 rows + totals row |
-| `*` | NotFoundPage | |
+| `/login` | LoginPage | Username + password (masked). Shows the API's generic error on 401, and a "Session expired" banner for `?expired=1`. On success, redirects to the originally requested location (`state.from`) or `/`. An already signed-in user is redirected away |
+| `/` | MainMenuPage | `GET /me`. Shows name, user-type chip, subtitle by type (INDIVIDUAL→jobTitle, COMPANY→headquarters, MUNICIPALITY→municipalityCategory, GOVERNMENT_AGENCY→agencyNameLocalOffice) and the type's other profile fields. Card links to the 5 pages below. Logout is in the app bar on every page |
+| `/resources/new` | AddResourcePage | Loads `/me`, `/esfs` and `/cost-units` in parallel. Owner shown read-only ("Name (username)"). Primary ESF select; additional ESFs in an Autocomplete multi-select that excludes the primary (changing the primary removes it from the additional ESFs); capability chips (add with Enter/Add, case-insensitive duplicate check, remove); cost (≤ 2 decimals) + unit select; lat/lon; optional max distance. On 201: success alert "Resource #id created", and the form resets |
+| `/incidents/new` | AddIncidentPage | Declaration select "(MD) Major Disaster" (server order = by name); native date input defaulting to today with `max=today`; description (6–500, live counter); lat/lon. Incident ID is shown as "(auto assigned)". On 201: success alert with the **server-generated** incidentId and a link to `/resources/search?incidentId=<id>` |
+| `/resources/search` | SearchResourcesPage | Filters: keyword, ESF (Any), incident (my incidents, or none; preselected from `?incidentId=`), "Within N km" (enabled only with an incident; cleared when the incident is cleared). Runs an unfiltered search on load (all resources, F-5 AC1). Paginated MUI table (20/page, server-side): ID, name, owner name, cost/unit, status chip ("Available" / "In use until YYYY-MM-DD"), plus distance and action columns when the search used an incident. Action: **Deploy** if `ownerUsername === me && available`, otherwise **Request** → dialog for expectedReturnDate (≥ today) → `POST /resource-requests` with `deployImmediately` set accordingly. Success snackbar and results refresh; API errors (e.g. 409) stay in the dialog |
+| `/resource-status` | ResourceStatusPage | Three independently loaded tables: "Resources in use" (`role=requester&status=DEPLOYED`, Return), "Resources requested by me" (`role=requester&status=PENDING`, Cancel), "Requests received" (`role=owner&status=PENDING`, Deploy (disabled with a tooltip unless `resourceAvailable`) and Reject). Every action asks for confirmation, then shows a success or error snackbar (ProblemDetail `detail`) and refreshes all three tables |
+| `/reports/resources-by-esf` | ResourceReportPage | Table of the 15 ESF rows + a totals footer row; a hint with an "Add a resource" link when the caller has no resources |
+| `*` | NotFoundPage | Public; links back to `/` |
 
-Every page has loading, empty, and error states. Form validation uses the ported rules. Server `fieldErrors` map onto field helper texts. No `console.log`. All controls are labelled (a11y).
+Every page has loading, empty and error states (the error state has Retry where it helps). Forms validate with the ported pure validators (on submit, then on touch). Server `errors[]` map onto field helper texts, and errors for unknown fields are listed in the page alert together with the `requestId`. There is no `console.log` (`no-console` is an ESLint error) and no hardcoded `http://localhost` in `src/` (an ESLint `no-restricted-syntax` rule enforces this). All controls are labelled, and jsx-a11y `strict` is enforced. A "Skip to main content" link is provided. Client-side "today" uses the browser's time zone; the server (`ERMS_TIME_ZONE`) is authoritative.
 
 ### 4.4 Dev & test
-- `vite.config.ts` dev server proxies `/api` → `process.env.VITE_PROXY_TARGET ?? "http://localhost:8080"`.
-- Scripts: `dev`, `build` (`tsc -b && vite build`), `preview`, `test` (`vitest run`), `test:coverage`, `lint` (`eslint . --max-warnings 0`), `format`, `format:check`, `typecheck`.
-- Coverage threshold: 70% lines (`vitest --coverage`, v8). Required tests: validators; AuthContext (persist / expire / logout); ProtectedRoute redirect; the API client 401 interceptor; LoginPage success and failure (MSW); SearchResourcesPage Request vs Deploy action logic; ResourceStatusPage actions call the correct endpoints.
+- `vite.config.ts`: the dev server (5173) and `vite preview` (4173) proxy `/api` → `process.env.VITE_PROXY_TARGET ?? "http://localhost:8080"`. The build emits no inline scripts or styles, so it works with the CSP below.
+- Scripts: `dev`, `build` (`tsc -b && vite build`), `preview`, `test` (`vitest run`), `test:watch`, `test:coverage`, `lint` (`eslint . --max-warnings 0`), `lint:fix`, `format`, `format:check`, `typecheck` (`tsc -b --noEmit`).
+- Coverage (`vitest.config.ts`, v8): thresholds of lines/statements/functions ≥ 85% and branches ≥ 80%. This is stricter than the required 70% lines. `main.tsx`, `types/` and `test/` are excluded.
+- Tests: see [TESTING.md → Frontend suite](TESTING.md#frontend-suite). Every page is tested through the real route table with MSW handlers for the API.md endpoints.
 
 ### 4.5 Frontend image contract (`frontend/Dockerfile`)
-- Build: `FROM --platform=$BUILDPLATFORM node:24-alpine` → `npm ci` → `npm run build`.
-- Runtime: `nginxinc/nginx-unprivileged:1.29-alpine` (uid 101), listens on **8080**. Config comes from `nginx/default.conf.template` → `/etc/nginx/templates/` (the image runs envsubst into `/etc/nginx/conf.d/`). Env `BACKEND_URL` (default `http://backend:8080`). `location /api/ { proxy_pass ${BACKEND_URL}; }` (used by docker-compose; on k8s the Ingress routes `/api` directly). `location /healthz { return 200 "ok"; }`. SPA fallback `try_files $uri /index.html`. `/assets/` gets `Cache-Control: public, max-age=31536000, immutable`; `index.html` gets `no-cache`. Security headers: `Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: DENY`, `Permissions-Policy: geolocation=(), camera=(), microphone=()`. `server_tokens off`, gzip on.
-- Must work with a read-only root filesystem when `/tmp`, `/var/cache/nginx` and `/etc/nginx/conf.d` are emptyDirs. Put the pid file in `/tmp`. `HEALTHCHECK` with `wget -qO- http://127.0.0.1:8080/healthz`.
+- Build: `FROM --platform=$BUILDPLATFORM node:24-alpine` → `npm ci` (BuildKit cache mount) → `npm run build`. Tests and lint run in CI, not in the image build.
+- Runtime: `nginxinc/nginx-unprivileged:1.29-alpine`, `USER 101:101`, listens on **8080** (IPv4 only), `EXPOSE 8080`. OCI labels (`title`, `description`, `source`, `version`/`revision` from build args `VERSION`/`REVISION`).
+- Config: the image ships its own `/etc/nginx/nginx.conf` (from `nginx/nginx.conf`: pid and all temp paths in `/tmp`, JSON access log to stdout including `request_id`, `server_tokens off`). The base image's entrypoint renders `nginx/default.conf.template` (copied to `/etc/nginx/templates/`) into **`/tmp/default.conf`** (`NGINX_ENVSUBST_OUTPUT_DIR=/tmp`). nginx.conf includes that exact file, so a failed render stops nginx from starting instead of letting it run with no server block. The stock `conf.d/default.conf` is deleted.
+- Env: `BACKEND_URL` (default `http://backend:8080`, no trailing slash). `location /api/ { proxy_pass ${BACKEND_URL}; }` forwards the full `/api/v1/...` URI with `Host`, `X-Forwarded-*` and `X-Request-Id` (the caller's id, or nginx's `$request_id`). It is used by docker-compose; on k8s the Ingress routes `/api` directly. nginx resolves the `BACKEND_URL` host **once at start-up**, so the host must resolve when the container starts or nginx exits with `host not found in upstream`. In compose, use `depends_on` on the backend; on k8s the Service name resolves as soon as the Service exists.
+- Routes: `location = /healthz { return 200 "ok\n"; }`. SPA fallback `try_files $uri $uri/ /index.html` (deep links such as `/resource-status` serve index.html). `/assets/` uses `try_files $uri =404` with `Cache-Control: public, max-age=31536000, immutable`. Everything else (index.html, healthz) gets `no-cache`, and `/api/` keeps the backend's Cache-Control. Dotfiles → 404. gzip on.
+- Security headers (server level, `always`, inherited by every location): `Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: geolocation=(), camera=(), microphone=()`. On `/api/` the backend's duplicates of these headers are hidden.
+- Read-only root filesystem: **only `/tmp` must be writable**. Mounting emptyDirs/tmpfs at `/var/cache/nginx` and `/etc/nginx/conf.d` as well is harmless (the original contract) but not required. This avoids the docker `--tmpfs` permission problem: a tmpfs over an existing image directory inherits its `root:root 0775` mode and is not writable by uid 101. `HEALTHCHECK CMD ["wget","-qO-","http://127.0.0.1:8080/healthz"]` (exec form; hadolint clean).
+- Verified: `docker run --user 101:101 --read-only --tmpfs /tmp --tmpfs /var/cache/nginx --tmpfs /etc/nginx/conf.d --cap-drop ALL --security-opt no-new-privileges erms-frontend:dev` gives a healthy container, `/healthz` 200, deep links → index.html, headers present, and `/api/` proxied to the upstream.
 
 ---
 
@@ -396,10 +425,10 @@ Requirements:
 - **Ingress**: host `erms.localhost`. `/api` Prefix → backend:8080; `/` Prefix → frontend:8080.
 - **NetworkPolicy**: mysql accepts 3306 only from backend pods. Backend accepts 8080 from the ingress-controller namespace + frontend pods, and 8080/8081 from pods in the same namespace with label `app.kubernetes.io/component: test` (helm test). Frontend accepts 8080 from the ingress-controller namespace. Use the standard labels `app.kubernetes.io/{name,instance,component,version,managed-by}`, `helm.sh/chart`.
 - **helm test** pod (`curlimages/curl`, label component=test): `curl -fsS http://erms-backend:8081/actuator/health/readiness` and `http://erms-frontend:8080/healthz`.
-- Must pass `helm lint` and `helm template … | kubeconform -strict -summary -kubernetes-version 1.33.0` (or the cluster's version).
+- Must pass `helm lint` and `helm template … | kubeconform -strict -summary -kubernetes-version 1.36.0` (the Rancher Desktop cluster runs k3s v1.36.6).
 
 ### 5.3 CI: `.github/workflows/ci.yml` (`name: CI`)
-Triggers: `pull_request` (branches: master), `push` (branches: master), `workflow_dispatch`. Top-level `permissions: contents: read`. `concurrency: ci-${{ github.ref }}`, cancel-in-progress for PRs. Pin actions to major versions (Dependabot keeps them updated).
+Triggers: `pull_request` (branches: main), `push` (branches: main), `workflow_dispatch`. Top-level `permissions: contents: read`. `concurrency: ci-${{ github.ref }}`, cancel-in-progress for PRs. Pin actions to major versions (Dependabot keeps them updated).
 
 | Job | Runs on | Steps |
 |---|---|---|
@@ -408,19 +437,19 @@ Triggers: `pull_request` (branches: master), `push` (branches: master), `workflo
 | `helm` | ubuntu-latest | setup-helm → `helm lint deploy/helm/erms -f deploy/helm/erms/values-local.yaml` → template with `--set backend.image.tag=ci --set frontend.image.tag=ci` → kubeconform |
 | `dockerfiles` | ubuntu-latest | hadolint for `backend/Dockerfile` and `frontend/Dockerfile` (`failure-threshold: warning`) |
 | `security` | ubuntu-latest | Trivy `fs` scan (vuln, secret, misconfig; `severity: CRITICAL,HIGH`; `ignore-unfixed: true`) → SARIF upload (`permissions: security-events: write` on this job). Fails on CRITICAL |
-| `images` | ubuntu-latest, `needs: [backend, frontend, helm, dockerfiles, security]` | setup-qemu + setup-buildx → **on push to master**: login ghcr with `GITHUB_TOKEN` (`permissions: packages: write`), build-push both images, `platforms: linux/amd64,linux/arm64`, tags `ghcr.io/${{ github.repository_owner }}/erms-{backend,frontend}:${{ github.sha }}` and `:latest`, `cache-from/to: type=gha`, `provenance: true`, `sbom: true` → Trivy image scan of the pushed sha tag (fail on fixable CRITICAL). **On PR**: build linux/amd64 only with `push: false, load: true` and Trivy-scan the local image |
+| `images` | ubuntu-latest, `needs: [backend, frontend, helm, dockerfiles, security]` | setup-qemu + setup-buildx → **on push to main**: login ghcr with `GITHUB_TOKEN` (`permissions: packages: write`), build-push both images, `platforms: linux/amd64,linux/arm64`, tags `ghcr.io/${{ github.repository_owner }}/erms-{backend,frontend}:${{ github.sha }}` and `:latest`, `cache-from/to: type=gha`, `provenance: true`, `sbom: true` → Trivy image scan of the pushed sha tag (fail on fixable CRITICAL). **On PR**: build linux/amd64 only with `push: false, load: true` and Trivy-scan the local image |
 
-`.github/workflows/codeql.yml`: languages `java-kotlin` (build-mode autobuild or manual `./mvnw -B -DskipTests package`) and `javascript-typescript`. Runs on push/PR to master and weekly. `.github/dependabot.yml`: ecosystems `maven` (/backend), `npm` (/frontend), `docker` (/backend, /frontend), `github-actions` (/), all weekly, with grouped minor/patch updates.
+`.github/workflows/codeql.yml`: languages `java-kotlin` (build-mode autobuild or manual `./mvnw -B -DskipTests package`) and `javascript-typescript`. Runs on push/PR to main and weekly. `.github/dependabot.yml`: ecosystems `maven` (/backend), `npm` (/frontend), `docker` (/backend, /frontend), `github-actions` (/), all weekly, with grouped minor/patch updates.
 
 ### 5.4 CD: `.github/workflows/cd.yml` (`name: CD`)
 ```yaml
 on:
-  workflow_run: { workflows: [CI], types: [completed], branches: [master] }
+  workflow_run: { workflows: [CI], types: [completed], branches: [main] }
   workflow_dispatch: { inputs: { image_tag: { description: "Image tag (git sha)", required: false } } }
 ```
 - Job `deploy-local`: `if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository)`.
 - `runs-on: [self-hosted, macOS, ARM64, rancher-desktop]`, `environment: { name: local, url: http://erms.localhost }`, `concurrency: { group: deploy-local, cancel-in-progress: false }`, `permissions: { contents: read, packages: read }`, `timeout-minutes: 20`.
-- Steps: checkout `ref: ${{ github.event.workflow_run.head_sha || github.sha }}` → resolve `TAG` (input, else head_sha) → preflight (`docker info`, `kubectl --context rancher-desktop get nodes`, `helm version`) → `docker login ghcr.io` with `GITHUB_TOKEN` → `docker pull` both `:$TAG` images (Rancher Desktop's moby engine shares the image store with k3s) → `helm upgrade --install erms deploy/helm/erms --kube-context rancher-desktop -n erms --create-namespace -f deploy/helm/erms/values-local.yaml --set backend.image.tag=$TAG --set frontend.image.tag=$TAG --atomic --wait --timeout 10m` → `helm test erms -n erms --kube-context rancher-desktop --logs` → `scripts/smoke-test.sh http://erms.localhost` → on failure: dump `kubectl get pods,events` and `kubectl logs` for each deployment → always `docker logout ghcr.io`.
+- Steps: checkout `ref: ${{ github.event.workflow_run.head_sha || github.sha }}` → resolve `TAG` (input, else head_sha) → preflight (`docker info`, `kubectl --context rancher-desktop get nodes`, `helm version`) → `docker login ghcr.io` with `GITHUB_TOKEN` → `docker pull` both `:$TAG` images (Rancher Desktop's moby engine shares the image store with k3s) → `helm upgrade --install erms deploy/helm/erms --kube-context rancher-desktop -n erms --create-namespace -f deploy/helm/erms/values-local.yaml --set backend.image.tag=$TAG --set frontend.image.tag=$TAG --rollback-on-failure --wait --timeout 10m` (Helm 4 renamed `--atomic`; the scripts choose the flag from the Helm major version) → `helm test erms -n erms --kube-context rancher-desktop --logs` → `scripts/smoke-test.sh http://erms.localhost` → on failure: `scripts/diagnostics.sh` (pods, events, describe, logs) → always `docker logout ghcr.io`.
 - **Never** pass a kube context through a global `kubectl config use-context`. Always use the explicit `--kube-context`/`--context` flag.
 - Health over the ingress: the management port is deliberately **not** exposed through the ingress. Readiness is covered by `helm test` (in-cluster), and the public path is covered by the smoke test.
 
@@ -435,7 +464,7 @@ Idempotent, `set -euo pipefail`, flags `--uninstall` and `--repo owner/name` (de
 3. `TOKEN=$(gh api -X POST repos/$REPO/actions/runners/registration-token --jq .token)`; `./config.sh --unattended --replace --url https://github.com/$REPO --token "$TOKEN" --name "$(scutil --get LocalHostName)-rancher-desktop" --labels rancher-desktop --work _work`. The default labels self-hosted/macOS/ARM64 are added automatically.
 4. Write `.path` = `$HOME/.rd/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin` and `.env` with `DOCKER_CONFIG=$HOME/.docker`, so the launchd service finds docker/kubectl/helm and the rancher-desktop docker context.
 5. `./svc.sh install && ./svc.sh start` (LaunchAgent, runs as the current user).
-6. **Public-repo hardening** via `gh api`: (a) create/update environment `local` with deployment branch policy = custom branches, add `master`; (b) set fork-PR workflow approval to all external contributors: `PUT repos/$REPO/actions/permissions/fork-pr-contributor-approval -f approval_policy=all_external_contributors` (warn, don't fail, if the endpoint isn't available); (c) print a reminder that self-hosted runners on public repos must never be targeted by `pull_request` workflows. Only `cd.yml` uses this runner.
+6. **Public-repo hardening** via `gh api`: (a) create/update environment `local` with deployment branch policy = custom branches, add `main`; (b) set fork-PR workflow approval to all external contributors: `PUT repos/$REPO/actions/permissions/fork-pr-contributor-approval -f approval_policy=all_external_contributors` (warn, don't fail, if the endpoint isn't available); (c) print a reminder that self-hosted runners on public repos must never be targeted by `pull_request` workflows. Only `cd.yml` uses this runner.
 7. `--uninstall`: `./svc.sh stop/uninstall`, `./config.sh remove --token $(gh api -X POST …/remove-token --jq .token)`.
 
 ### 5.6 Makefile targets
@@ -509,7 +538,7 @@ Each item gets a fix plus (where marked **T**) an automated test. IDs are refere
 | A05 Security Misconfiguration | Management port internal; docs off by default; non-root read-only containers; security headers; NetworkPolicies |
 | A06 Vulnerable Components | Current versions; Dependabot; Trivy fs+image; CodeQL |
 | A07 Identification & Auth Failures | Generic login errors; constant-time miss path; short-lived tokens; 401 → client logout |
-| A08 Software & Data Integrity | Pinned images by sha tag; SBOM + provenance; CD only from master push of this repo; fork-PR approval |
+| A08 Software & Data Integrity | Pinned images by sha tag; SBOM + provenance; CD only from main push of this repo; fork-PR approval |
 | A09 Logging & Monitoring | Structured JSON logs with requestId; no PII/credentials in logs; Prometheus metrics; audit trail in resource_request |
 | A10 SSRF | No user-controlled outbound requests |
 

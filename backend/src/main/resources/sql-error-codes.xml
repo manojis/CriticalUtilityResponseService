@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE beans PUBLIC "-//SPRING//DTD BEAN 3.0//EN" "https://www.springframework.org/dtd/spring-beans-3.0.dtd">
+<!--
+  Overrides Spring's default MySQL error-code mapping so that CHECK constraint violations
+  (3819, MySQL 8.0.16+) and "data too long / out of range" (1406, 1264) are reported as
+  DataIntegrityViolationException (HTTP 409) instead of an uncategorized error (HTTP 500).
+  Everything else is identical to spring-jdbc's built-in definition.
+-->
+<beans>
+  <bean id="MySQL" class="org.springframework.jdbc.support.SQLErrorCodes">
+    <property name="databaseProductNames">
+      <list>
+        <value>MySQL</value>
+        <value>MariaDB</value>
+      </list>
+    </property>
+    <property name="badSqlGrammarCodes">
+      <value>1054,1064,1146</value>
+    </property>
+    <property name="duplicateKeyCodes">
+      <value>1062</value>
+    </property>
+    <property name="dataIntegrityViolationCodes">
+      <value>630,839,840,893,1169,1215,1216,1217,1264,1364,1406,1451,1452,1557,3819</value>
+    </property>
+    <property name="dataAccessResourceFailureCodes">
+      <value>1</value>
+    </property>
+    <property name="cannotAcquireLockCodes">
+      <value>1205,3572</value>
+    </property>
+    <property name="deadlockLoserCodes">
+      <value>149,1213</value>
+    </property>
+  </bean>
+</beans>

@@ -9,7 +9,7 @@ Three developer agents work in parallel on branch `modernize/industry-standard`,
 |---|---|
 | `docs/API.md`, `docs/DATA_MODEL.md`, business rules in `docs/FEATURES.md`, backend sections of `docs/TESTING.md`, `backend/README.md` | WP-BE |
 | ARCHITECTURE.md §4 (frontend), "UI notes" in `docs/FEATURES.md`, frontend sections of `docs/TESTING.md`, `frontend/README.md` | WP-FE |
-| `docs/DEPLOYMENT.md`, `docs/RUNBOOK.md`, `docs/CICD.md` (replace every `<!-- PLAT: … -->` marker with exact, tested commands), `docs/SECURITY.md` secrets/hardening sections, root `README.md`, `CONTRIBUTING.md`, `CHANGELOG.md` | WP-PLAT |
+| `docs/DEPLOYMENT.md`, `docs/RUNBOOK.md`, `docs/CICD.md` (replace every PLAT placeholder marker with exact, tested commands), `docs/SECURITY.md` secrets/hardening sections, root `README.md`, `CONTRIBUTING.md`, `CHANGELOG.md` | WP-PLAT |
 | ARCHITECTURE.md (other sections), FLOWS.md, ADRs, this file | Architect / lead |
 
 If an implementation deviates from a doc, update the doc and list the deviation in your report. Don't edit docs owned by another package; put the change in your handoff notes.
@@ -67,7 +67,7 @@ Environment notes (developer Mac): Java 21 is installed. Maven is **not** instal
 3. `scripts/setup-local-runner.sh` per §5.5. `scripts/smoke-test.sh` and `scripts/deploy-local.sh` per §5.4.
 4. `docker-compose.yml` per §5.1, the Makefile per §5.6, and a root README (architecture summary, quick start for compose and Rancher Desktop, CI/CD flow, runner setup, demo credentials, links to docs).
 5. `CONTRIBUTING.md`: prerequisites, branch naming (`feat/…`, `fix/…`), Conventional Commits, PR checklist (tests, docs updated, no secrets), local commands, code style (Spotless/ESLint/Prettier), ADR process, security reporting pointer. `CHANGELOG.md`: Keep a Changelog format, an `[Unreleased]` section summarising this modernization (Added/Changed/Removed/Fixed/Security, referencing the §6 defect IDs).
-6. Fill in every `<!-- PLAT: … -->` marker in `docs/DEPLOYMENT.md`, `docs/RUNBOOK.md`, `docs/CICD.md` and `docs/TESTING.md` with commands you have actually run (or that are validated by lint), and reconcile the Helm values table with the real `values.yaml`.
+6. Fill in every PLAT placeholder marker in `docs/DEPLOYMENT.md`, `docs/RUNBOOK.md`, `docs/CICD.md` and `docs/TESTING.md` with commands you have actually run (or that are validated by lint), and reconcile the Helm values table with the real `values.yaml`.
 7. Write the scripts so they can run once the backend and frontend images exist. Until then, validate the chart with `helm lint`/`helm template` + kubeconform, and validate the workflows with `actionlint` (run it via `docker run --rm -v "$PWD":/repo -w /repo rhysd/actionlint:latest`) and shellcheck (`koalaman/shellcheck`).
 
 **Do not** register the runner or deploy. The lead does that after integration.
@@ -75,7 +75,7 @@ Environment notes (developer Mac): Java 21 is installed. Maven is **not** instal
 **Acceptance criteria**
 - `helm lint deploy/helm/erms -f deploy/helm/erms/values-local.yaml` passes, and `helm template … | kubeconform -strict -summary` reports 0 invalid.
 - actionlint and shellcheck are clean. No `pull_request` trigger appears in any workflow whose jobs use `self-hosted`.
-- No `<!-- PLAT:` markers remain in docs. Every command in the docs matches the Makefile, scripts and chart.
+- No PLAT placeholder markers remain in docs. Every command in the docs matches the Makefile, scripts and chart.
 - The rendered manifests meet the security requirements in §5.2: runAsNonRoot, drop ALL, readOnlyRootFilesystem (backend/frontend), probes, resources, and NetworkPolicies.
 
 ---
@@ -120,7 +120,7 @@ Run everything from a clean checkout of the branch. Record the evidence (command
 
 **Containers & Kubernetes**
 - [ ] Images run as non-root with read-only rootfs; healthchecks pass.
-- [ ] `helm upgrade --install` on `rancher-desktop` succeeds with `--atomic --wait`; `helm test` passes; `scripts/smoke-test.sh http://erms.localhost` passes.
+- [ ] `helm upgrade --install` on `rancher-desktop` succeeds with `--rollback-on-failure --wait` (Helm 4); `helm test` passes; `scripts/smoke-test.sh http://erms.localhost` passes.
 - [ ] A second `helm upgrade` keeps the same secrets (login still works, DB data persists). Pod restart → data persists (PVC).
 - [ ] NetworkPolicy: a throwaway pod in `erms` without the backend label can't reach mysql:3306.
 - [ ] Management port 8081 is not reachable via `http://erms.localhost`.
@@ -129,11 +129,11 @@ Run everything from a clean checkout of the branch. Record the evidence (command
 - [ ] `docs/API.md` matches the implemented endpoints, fields and status codes (compare with `/api/openapi` and the tests).
 - [ ] `docs/DATA_MODEL.md` matches the Flyway migrations (tables, columns, constraints, reference data).
 - [ ] `docs/FEATURES.md` ACs are met by the running app; UI notes match the UI.
-- [ ] `docs/DEPLOYMENT.md`, `RUNBOOK.md` and `CICD.md` have no `<!-- PLAT:` markers left; commands run as written (spot-check at least status, logs, rollback, uninstall).
+- [ ] `docs/DEPLOYMENT.md`, `RUNBOOK.md` and `CICD.md` have no PLAT placeholder markers left; commands run as written (spot-check at least status, logs, rollback, uninstall).
 - [ ] Mermaid diagrams render (GitHub preview or `npx -y @mermaid-js/mermaid-cli`); internal links resolve.
 - [ ] Root README quick start works from a clean clone; `CONTRIBUTING.md` and `CHANGELOG.md` exist and are accurate.
 
 **CI/CD**
-- [ ] `ci.yml` triggers/permissions/jobs per §5.3; images job pushes only on master push; multi-arch.
-- [ ] `cd.yml` cannot be triggered by `pull_request` or fork runs; uses environment `local`, concurrency, explicit kube context, `--atomic`, smoke test, failure diagnostics.
+- [ ] `ci.yml` triggers/permissions/jobs per §5.3; images job pushes only on main push; multi-arch.
+- [ ] `cd.yml` cannot be triggered by `pull_request` or fork runs; uses environment `local`, concurrency, explicit kube context, `--rollback-on-failure`, smoke test, failure diagnostics.
 - [ ] `setup-local-runner.sh` is idempotent, verifies checksum, applies public-repo hardening, supports `--uninstall`.

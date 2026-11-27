@@ -1,0 +1,86 @@
+{{- if .Values.networkPolicy.enabled }}
+# backend: app port from the ingress controller and the frontend; app + management port from helm test pods.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "erms.backend.fullname" . }}
+  labels:
+    {{- include "erms.labels" (dict "ctx" $ "component" "backend") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "erms.selectorLabels" (dict "ctx" $ "component" "backend") | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressControllerNamespace | quote }}
+        - podSelector:
+            matchLabels:
+              {{- include "erms.selectorLabels" (dict "ctx" $ "component" "frontend") | nindent 14 }}
+      ports:
+        - port: 8080
+          protocol: TCP
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: test
+      ports:
+        - port: 8080
+          protocol: TCP
+        - port: 8081
+          protocol: TCP
+---
+# frontend: from the ingress controller; helm test pods may call /healthz.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "erms.frontend.fullname" . }}
+  labels:
+    {{- include "erms.labels" (dict "ctx" $ "component" "frontend") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "erms.selectorLabels" (dict "ctx" $ "component" "frontend") | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressControllerNamespace | quote }}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: test
+      ports:
+        - port: 8080
+          protocol: TCP
+{{- if .Values.mysql.enabled }}
+---
+# mysql: 3306 only from backend pods (including the backend's wait-for-mysql initContainer).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "erms.mysql.fullname" . }}
+  labels:
+    {{- include "erms.labels" (dict "ctx" $ "component" "mysql") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "erms.selectorLabels" (dict "ctx" $ "component" "mysql") | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "erms.selectorLabels" (dict "ctx" $ "component" "backend") | nindent 14 }}
+      ports:
+        - port: 3306
+          protocol: TCP
+{{- end }}
+{{- end }}

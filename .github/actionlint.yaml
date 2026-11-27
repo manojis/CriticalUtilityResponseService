@@ -1,0 +1,5 @@
+# actionlint configuration (https://github.com/rhysd/actionlint/blob/main/docs/config.md)
+self-hosted-runner:
+  # Custom label of the Rancher Desktop runner registered by scripts/setup-local-runner.sh.
+  labels:
+    - rancher-desktop

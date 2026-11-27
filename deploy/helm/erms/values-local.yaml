@@ -1,0 +1,11 @@
+# Rancher Desktop (k3s, Traefik, local-path, moby engine) overrides.
+# Usage: helm upgrade --install erms deploy/helm/erms --kube-context rancher-desktop -n erms \
+#          --create-namespace -f deploy/helm/erms/values-local.yaml \
+#          --set backend.image.tag=<sha> --set frontend.image.tag=<sha>
+backend:
+  profiles: demo
+  apiDocsEnabled: true
+
+mysql:
+  storage:
+    storageClass: local-path

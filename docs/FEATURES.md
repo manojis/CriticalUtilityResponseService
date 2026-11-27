@@ -30,10 +30,14 @@ User accounts are provisioned in the database (seeded in the `demo` profile). Se
 
 **BR** Passwords are stored as BCrypt hashes only. The token TTL defaults to 1 h. Identity comes only from the token.
 
+**UI notes** The password field is masked. A failed login shows the server's generic message ("Invalid username or password") and stays on `/login`. The session (`token`, `user`, `expiresAt` from the JWT `exp`) lives in sessionStorage under `erms.auth`. The SPA also expires the session locally when `exp` is reached, and treats any 401 except from login as "Session expired" (`/login?expired=1`). After re-login it returns to the page the user was on.
+
 ## F-2 Profile and main menu
 **Story** As a user, I see my name and type-specific details, plus navigation to every function.
 
 **AC** `GET /me` populates the header. The subtitle follows the table above. The menu links to: Add Resource, Add Incident, Search Resources, Resource Status, Resource Report, Logout.
+
+**UI notes** The menu page shows a profile card (name, user-type chip, subtitle, and the type's other fields such as hire date or number of employees) and five link cards. Logout sits in the app bar on every authenticated page, next to the user's name and user-type label.
 
 ## F-3 Add incident
 **Story** As a user responding to an emergency, I declare an incident so I can request resources for it.
@@ -46,7 +50,7 @@ User accounts are provisioned in the database (seeded in the `demo` profile). Se
 
 **BR** date ≤ today · description 6–500 chars · latitude −90..90 · longitude −180..180 · declaration must exist · owner = caller · IDs are sequential per declaration and never reused.
 
-**UI notes** Declarations are sorted by name. The date picker blocks future dates. A success message shows the new ID with a link to Search for that incident.
+**UI notes** Declarations show as "(MD) Major Disaster" in the server's order (by name). The incident ID field reads "(auto assigned)". The date input defaults to today and has `max` = today, which blocks future dates. The description shows a live character counter. Errors show per field: client rules on submit and then on touch, and server `errors[]` on the matching input. A success alert shows the new ID with a link to Search for that incident (`/resources/search?incidentId=…`), and the form resets.
 
 ## F-4 Add resource
 **Story** As a resource owner, I register equipment or services with their capabilities, cost and location so responders can find them.
@@ -59,7 +63,7 @@ User accounts are provisioned in the database (seeded in the `demo` profile). Se
 
 **BR** name 3–100 · cost ≥ 0 with 2 decimals · unit and ESFs must exist · additional ESFs unique and ≠ primary · capabilities trimmed, deduplicated case-insensitively, 1–100 chars each · max distance > 0 or empty (empty = no limit) · a new resource is available.
 
-**UI notes** Changing the primary ESF removes it from the additional ESFs. Capabilities show as chips.
+**UI notes** The owner field reads "Name (username)" and is read-only. Additional ESFs are a searchable multi-select that never offers the primary ESF, and changing the primary ESF removes it from the selection. Capabilities are added with Enter or the Add button, show as removable chips, and case-insensitive duplicates are rejected inline. Cost has a $ prefix and a unit select ("Per"). Max distance shows a "km" suffix and stays blank for no limit. A success alert shows "Resource #id created", and the form resets.
 
 ## F-5 Search resources
 **Stories**
@@ -77,7 +81,7 @@ User accounts are provisioned in the database (seeded in the `demo` profile). Se
 
 **BR** Only the caller's own incidents can be used as the search origin. Search covers all users' resources.
 
-**UI notes** Action column (only when an incident is selected): **Deploy** for my own available resources; **Request** otherwise. Both open a dialog asking for the expected return date (≥ today). The table is paginated (20/page).
+**UI notes** The page runs an unfiltered search on load (every resource). "Within N km" stays disabled until an incident is selected and clears when the incident is cleared. Distance and Action columns appear only when the search used an incident. Action: **Deploy** for my own available resources, **Request** otherwise. Both open a dialog asking for the expected return date (≥ today). Deploy sends `deployImmediately: true`. Success shows a snackbar and refreshes the results; API errors (e.g. 409) show inside the dialog. Status is a chip ("Available" / "In use until YYYY-MM-DD"), and cost reads "$150.00 / Hour". The table is paginated server-side (20/page).
 
 ## F-6 Resource request lifecycle
 **Stories**
@@ -108,10 +112,14 @@ User accounts are provisioned in the database (seeded in the `demo` profile). Se
 
 All tables refresh after any action, and a success or error snackbar is shown.
 
+**UI notes** Each table loads independently, with its own loading, empty and error (Retry) state. Every action asks for confirmation first. A disabled Deploy explains itself with a tooltip ("Resource is currently deployed elsewhere"). Error snackbars show the ProblemDetail `detail` (e.g. the 409 reason).
+
 ## F-8 Resource report
 **Story** As an owner, I see my resources by primary ESF and how many are in use.
 
 **AC** All 15 ESFs are listed (zero rows included) with ESF #, description, total resources and resources in use, plus a totals row. The numbers update immediately after deploy and return.
+
+**UI notes** The totals row is a bold table footer. When the caller has no resources, a hint with an "Add a resource" link appears above the (all-zero) table. The report is fetched fresh on every visit.
 
 ## Non-functional requirements
 | Area | Requirement |

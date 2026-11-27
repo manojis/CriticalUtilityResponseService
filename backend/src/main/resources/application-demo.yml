@@ -1,0 +1,12 @@
+# Demo / Rancher Desktop: adds the idempotent demo seed (db/seed/R__demo_seed.sql) and turns API docs on.
+# Never enable this profile in production.
+spring:
+  flyway:
+    locations: classpath:db/migration,classpath:db/seed
+springdoc:
+  api-docs:
+    enabled: ${ERMS_API_DOCS_ENABLED:true}
+  swagger-ui:
+    enabled: ${ERMS_API_DOCS_ENABLED:true}
+erms:
+  api-docs-enabled: ${ERMS_API_DOCS_ENABLED:true}
