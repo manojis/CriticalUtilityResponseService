@@ -1,0 +1,90 @@
+# ERMS local development stack (no Kubernetes): MySQL 8.4 + backend + frontend.
+#
+#   docker compose up --build -d      # or: make up
+#   open http://localhost:3000        # app (nginx proxies /api to the backend)
+#   http://localhost:8080/api/docs    # Swagger UI (backend direct)
+#   docker compose down               # add -v to wipe the database volume
+#
+# !!! DEV ONLY !!! Every "change-me-…" value below is a public placeholder for local development.
+# Never reuse these values anywhere else. Kubernetes deployments use generated Secrets (see docs/SECURITY.md).
+name: erms
+
+services:
+  mysql:
+    image: mysql:8.4.13
+    environment:
+      MYSQL_DATABASE: erms
+      MYSQL_USER: erms
+      MYSQL_PASSWORD: change-me-dev-mysql-password # DEV ONLY placeholder
+      MYSQL_ROOT_PASSWORD: change-me-dev-mysql-root-password # DEV ONLY placeholder
+    ports:
+      - "127.0.0.1:${MYSQL_HOST_PORT:-3306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_ROOT_PASSWORD\" mysqladmin ping -h 127.0.0.1 -uroot --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    image: erms-backend:dev
+    environment:
+      SPRING_PROFILES_ACTIVE: demo
+      ERMS_API_DOCS_ENABLED: "true"
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/erms?connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true
+      SPRING_DATASOURCE_USERNAME: erms
+      SPRING_DATASOURCE_PASSWORD: change-me-dev-mysql-password # DEV ONLY placeholder (matches mysql above)
+      ERMS_JWT_SECRET: change-me-dev-only-jwt-secret-0123456789abcdef # DEV ONLY placeholder (>= 32 bytes)
+      ERMS_TIME_ZONE: UTC
+    ports:
+      - "127.0.0.1:8080:8080" # API
+      - "127.0.0.1:8081:8081" # management (actuator)
+    depends_on:
+      mysql:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/actuator/health/readiness"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    image: erms-frontend:dev
+    environment:
+      BACKEND_URL: http://backend:8080
+    ports:
+      - "127.0.0.1:3000:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx
+      - /etc/nginx/conf.d
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  mysql-data:

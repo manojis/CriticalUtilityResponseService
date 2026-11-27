@@ -1,0 +1,156 @@
+# CD: deploy to Rancher Desktop (k3s) on the developer Mac through a self-hosted runner.
+#
+# SECURITY (public repository): this is the ONLY workflow that targets the self-hosted runner.
+# It must never gain a pull_request / pull_request_target trigger. It runs only for
+#   - a successful CI run triggered by a push to main of THIS repository (workflow_run), or
+#   - a manual dispatch on main by someone with write access.
+# The environment "local" additionally only accepts deployments from main.
+name: CD
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to deploy (git sha). Empty = the commit this run is on."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-local:
+    name: Deploy to Rancher Desktop
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: [self-hosted, macOS, ARM64, rancher-desktop]
+    environment:
+      name: local
+      url: http://erms.localhost
+    concurrency:
+      group: deploy-local
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: read
+    timeout-minutes: 20
+    env:
+      KUBE_CONTEXT: rancher-desktop
+      NAMESPACE: erms
+      RELEASE: erms
+      CHART: deploy/helm/erms
+      BASE_URL: http://erms.localhost
+      HELM_TIMEOUT: 10m
+    steps:
+      - name: Checkout the commit CI validated
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
+
+      # Note: macOS /bin/bash is 3.2. Keep run steps free of bash 4+ features.
+      - name: Resolve image tag and tool environment
+        env:
+          INPUT_TAG: ${{ inputs.image_tag }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          TAG="${INPUT_TAG:-${HEAD_SHA:-$GITHUB_SHA}}"
+          if ! [[ "$TAG" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$ ]]; then
+            echo "::error::invalid image tag '$TAG'"
+            exit 1
+          fi
+          {
+            echo "TAG=$TAG"
+            echo "IMAGE_REGISTRY=ghcr.io/$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]')"
+            # Job-scoped docker config: GHCR credentials never touch ~/.docker/config.json.
+            echo "DOCKER_CONFIG=$RUNNER_TEMP/docker-config"
+          } >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/docker-config"
+          # Talk to Rancher Desktop's moby engine directly (its image store is shared with k3s).
+          if [[ -S "$HOME/.rd/docker.sock" ]]; then
+            echo "DOCKER_HOST=unix://$HOME/.rd/docker.sock" >> "$GITHUB_ENV"
+          fi
+          if [[ -d "$HOME/.rd/bin" ]]; then
+            echo "$HOME/.rd/bin" >> "$GITHUB_PATH"
+          fi
+          echo "Deploying tag $TAG"
+
+      - name: Preflight
+        run: |
+          set -euo pipefail
+          docker info --format 'docker {{.ServerVersion}} ({{.OperatingSystem}}, {{.Architecture}})'
+          kubectl --context "$KUBE_CONTEXT" get nodes -o wide
+          helm version --short
+
+      - name: Log in to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+
+      - name: Pull images into the Rancher Desktop image store
+        run: |
+          set -euo pipefail
+          docker pull "$IMAGE_REGISTRY/erms-backend:$TAG"
+          docker pull "$IMAGE_REGISTRY/erms-frontend:$TAG"
+
+      - name: Ensure namespace (Pod Security restricted)
+        run: |
+          set -euo pipefail
+          kubectl --context "$KUBE_CONTEXT" get namespace "$NAMESPACE" >/dev/null 2>&1 \
+            || kubectl --context "$KUBE_CONTEXT" create namespace "$NAMESPACE"
+          kubectl --context "$KUBE_CONTEXT" label namespace "$NAMESPACE" --overwrite \
+            pod-security.kubernetes.io/enforce=restricted \
+            pod-security.kubernetes.io/enforce-version=latest
+
+      - name: helm upgrade --install
+        run: |
+          set -euo pipefail
+          # Helm 4 renamed --atomic to --rollback-on-failure.
+          if helm version --short | grep -q '^v3\.'; then ROLLBACK_FLAG=--atomic; else ROLLBACK_FLAG=--rollback-on-failure; fi
+          helm upgrade --install "$RELEASE" "$CHART" \
+            --kube-context "$KUBE_CONTEXT" -n "$NAMESPACE" --create-namespace \
+            -f "$CHART/values-local.yaml" \
+            --set imageRegistry="$IMAGE_REGISTRY" \
+            --set backend.image.tag="$TAG" \
+            --set frontend.image.tag="$TAG" \
+            "$ROLLBACK_FLAG" --wait --timeout "$HELM_TIMEOUT"
+
+      - name: helm test
+        run: helm test "$RELEASE" -n "$NAMESPACE" --kube-context "$KUBE_CONTEXT" --logs --timeout 5m
+
+      - name: Smoke test
+        run: scripts/smoke-test.sh "$BASE_URL"
+
+      - name: Diagnostics
+        if: failure()
+        run: scripts/diagnostics.sh --context "$KUBE_CONTEXT" --namespace "$NAMESPACE" --release "$RELEASE"
+
+      - name: Summary
+        if: success()
+        run: |
+          {
+            echo "### Deployed ERMS to Rancher Desktop"
+            echo "- Image tag: \`$TAG\`"
+            echo "- URL: $BASE_URL"
+            echo '```'
+            helm history "$RELEASE" -n "$NAMESPACE" --kube-context "$KUBE_CONTEXT" --max 3
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Log out of GHCR
+        if: always()
+        run: |
+          docker logout ghcr.io || true
+          rm -rf "${DOCKER_CONFIG:?}"

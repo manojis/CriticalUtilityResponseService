@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "erms.frontend.fullname" . }}
+  labels:
+    {{- include "erms.labels" (dict "ctx" $ "component" "frontend" "version" .Values.frontend.image.tag) | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "erms.selectorLabels" (dict "ctx" $ "component" "frontend") | nindent 4 }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP

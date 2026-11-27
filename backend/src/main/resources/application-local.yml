@@ -1,0 +1,11 @@
+# Developer laptop: human-readable logs and API docs on. Combine with `demo` (SPRING_PROFILES_ACTIVE=local,demo) for seed data.
+springdoc:
+  api-docs:
+    enabled: ${ERMS_API_DOCS_ENABLED:true}
+  swagger-ui:
+    enabled: ${ERMS_API_DOCS_ENABLED:true}
+erms:
+  api-docs-enabled: ${ERMS_API_DOCS_ENABLED:true}
+logging:
+  level:
+    edu.gatech.erms: DEBUG

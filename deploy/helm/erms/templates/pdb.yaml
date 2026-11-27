@@ -1,0 +1,17 @@
+{{- range $component := list "backend" "frontend" }}
+{{- $cfg := index $.Values $component }}
+{{- if or (gt (int $cfg.replicas) 1) $cfg.autoscaling.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "erms.fullname" $ }}-{{ $component }}
+  labels:
+    {{- include "erms.labels" (dict "ctx" $ "component" $component "version" $cfg.image.tag) | nindent 4 }}
+spec:
+  minAvailable: {{ $cfg.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "erms.selectorLabels" (dict "ctx" $ "component" $component) | nindent 6 }}
+{{- end }}
+{{- end }}

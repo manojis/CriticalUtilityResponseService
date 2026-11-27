@@ -1,0 +1,35 @@
+{{- if .Values.mysql.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "erms.mysql.fullname" . }}-headless
+  labels:
+    {{- include "erms.labels" (dict "ctx" $ "component" "mysql" "version" .Values.mysql.image.tag) | nindent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    {{- include "erms.selectorLabels" (dict "ctx" $ "component" "mysql") | nindent 4 }}
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: mysql
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "erms.mysql.fullname" . }}
+  labels:
+    {{- include "erms.labels" (dict "ctx" $ "component" "mysql" "version" .Values.mysql.image.tag) | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "erms.selectorLabels" (dict "ctx" $ "component" "mysql") | nindent 4 }}
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: mysql
+      protocol: TCP
+{{- end }}

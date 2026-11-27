@@ -1,0 +1,24 @@
+ERMS {{ .Chart.AppVersion }} deployed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+  backend image : {{ include "erms.appImage" (dict "ctx" $ "image" .Values.backend.image) }}
+  frontend image: {{ include "erms.appImage" (dict "ctx" $ "image" .Values.frontend.image) }}
+{{- if .Values.ingress.enabled }}
+
+App:  http://{{ .Values.ingress.host }}
+API:  http://{{ .Values.ingress.host }}/api/v1
+{{- if .Values.backend.apiDocsEnabled }}
+Docs: http://{{ .Values.ingress.host }}/api/docs
+{{- end }}
+{{- end }}
+
+Check it:
+  kubectl --context <ctx> -n {{ .Release.Namespace }} get pods,svc,ingress,pvc
+  helm test {{ .Release.Name }} -n {{ .Release.Namespace }} --logs
+{{- if .Values.backend.profiles | contains "demo" }}
+
+Demo users (profile "demo"): alice, metro_city, fema_atl, acme_rescue / password "password".
+{{- end }}
+{{- if not .Values.secrets.existingSecret }}
+
+Secret "{{ include "erms.secretName" . }}" is kept on uninstall (helm.sh/resource-policy: keep),
+as is the MySQL PVC. Delete both to wipe all data (see docs/RUNBOOK.md).
+{{- end }}

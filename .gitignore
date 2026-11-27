@@ -1,0 +1,31 @@
+# --- OS / editors ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.iml
+*.swp
+*~
+
+# --- Secrets & local env (never commit) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+kubeconfig*
+.secrets/
+
+# --- Build output ---
+backend/target/
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+*.log
+
+# --- Platform tooling ---
+deploy/helm/**/charts/*.tgz
+*.tgz
+*.sarif
+trivy-*.json
+.actionlint-cache/

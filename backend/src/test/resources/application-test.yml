@@ -1,0 +1,12 @@
+# Test-only settings. The secret below is a throwaway value for automated tests.
+erms:
+  jwt:
+    secret: test-only-jwt-secret-0123456789-abcdefghijklmnop
+spring:
+  main:
+    banner-mode: "off"
+logging:
+  level:
+    edu.gatech.erms: INFO
+    org.testcontainers: INFO
+    tc: INFO

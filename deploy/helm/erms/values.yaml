@@ -1,0 +1,150 @@
+# Default values for the ERMS chart.
+# Production-leaning defaults. Rancher Desktop overrides live in values-local.yaml.
+# Reference: docs/DEPLOYMENT.md#configuration-helm-values
+
+# -- Override the chart name used in resource names.
+nameOverride: ""
+# -- Override the full resource-name prefix (defaults to the release name, e.g. "erms").
+fullnameOverride: ""
+
+# -- Registry prefix for the ERMS application images (backend and frontend).
+imageRegistry: ghcr.io/manojis
+
+serviceAccount:
+  # -- Create a dedicated ServiceAccount (API token automount is always disabled).
+  create: true
+  # -- Name of the ServiceAccount. Defaults to the full name.
+  name: ""
+
+backend:
+  image:
+    repository: erms-backend
+    # -- Image tag. CD sets it to the git sha. Empty falls back to the chart appVersion.
+    tag: ""
+    pullPolicy: IfNotPresent
+  # -- Ignored when backend.autoscaling.enabled is true.
+  replicas: 1
+  # -- SPRING_PROFILES_ACTIVE (comma-separated). "demo" loads the demo seed data.
+  profiles: ""
+  # -- ERMS_API_DOCS_ENABLED: OpenAPI at /api/openapi and Swagger UI at /api/docs.
+  apiDocsEnabled: false
+  # -- ERMS_CORS_ALLOWED_ORIGINS (comma-separated). Empty disables CORS (same-origin via the Ingress).
+  corsAllowedOrigins: ""
+  jwt:
+    # -- ERMS_JWT_TTL (ISO-8601 duration).
+    ttl: PT1H
+    # -- ERMS_JWT_ISSUER.
+    issuer: erms
+  # -- ERMS_TIME_ZONE used for "today" dates.
+  timeZone: UTC
+  datasource:
+    # -- Full JDBC URL. Empty = the in-chart MySQL service. Set it when mysql.enabled is false.
+    url: ""
+    # -- DB username. Empty = mysql.username.
+    username: ""
+  # -- Extra environment variables (list of EnvVar objects).
+  extraEnv: []
+  podAnnotations: {}
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 1Gi
+  autoscaling:
+    # -- Create a HorizontalPodAutoscaler (needs metrics-server; k3s ships it).
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 75
+  pdb:
+    # -- PodDisruptionBudget minAvailable. The PDB is rendered only when replicas > 1 or autoscaling is on.
+    minAvailable: 1
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+frontend:
+  image:
+    repository: erms-frontend
+    # -- Image tag. CD sets it to the git sha. Empty falls back to the chart appVersion.
+    tag: ""
+    pullPolicy: IfNotPresent
+  replicas: 1
+  podAnnotations: {}
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 128Mi
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 75
+  pdb:
+    minAvailable: 1
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+mysql:
+  # -- Deploy the in-chart MySQL StatefulSet. Disable for an external/managed DB
+  # (then set backend.datasource.url and secrets.existingSecret).
+  enabled: true
+  image:
+    repository: mysql
+    tag: "8.4.13"
+    pullPolicy: IfNotPresent
+  database: erms
+  username: erms
+  # -- Run mysqld with a read-only root filesystem (emptyDirs for /var/run/mysqld and /tmp).
+  readOnlyRootFilesystem: true
+  storage:
+    size: 2Gi
+    # -- StorageClass for the data PVC. Empty = the cluster default.
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# -- Image for the backend's wait-for-mysql initContainer.
+waitForDb:
+  image:
+    repository: busybox
+    tag: "1.37.0"
+    pullPolicy: IfNotPresent
+
+secrets:
+  # -- Use a pre-created Secret instead of the chart-managed "<fullname>-secrets".
+  # It must contain the keys mysql-root-password, mysql-password and jwt-secret (>= 32 bytes).
+  existingSecret: ""
+
+ingress:
+  enabled: true
+  className: traefik
+  host: erms.localhost
+  annotations: {}
+  # -- TLS blocks, e.g. [{secretName: erms-tls, hosts: [erms.example.com]}].
+  tls: []
+
+networkPolicy:
+  enabled: true
+  # -- Namespace of the ingress controller pods (Traefik on k3s/Rancher Desktop runs in kube-system).
+  ingressControllerNamespace: kube-system
+
+tests:
+  image:
+    repository: curlimages/curl
+    tag: "8.23.0"
+    pullPolicy: IfNotPresent

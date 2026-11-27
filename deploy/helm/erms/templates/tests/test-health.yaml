@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "erms.fullname" . }}-test-health
+  labels:
+    {{- include "erms.labels" (dict "ctx" $ "component" "test") | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    # Keep the finished pod so `helm test --logs` can read it; it is replaced on the next run.
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  restartPolicy: Never
+  serviceAccountName: {{ include "erms.serviceAccountName" . }}
+  automountServiceAccountToken: false
+  enableServiceLinks: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 100
+    runAsGroup: 101
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: health
+      image: {{ include "erms.image" .Values.tests.image }}
+      imagePullPolicy: {{ .Values.tests.image.pullPolicy }}
+      command:
+        - sh
+        - -c
+        - |
+          set -eu
+          echo "backend readiness:"
+          curl -fsS --retry 5 --retry-delay 3 --retry-all-errors --max-time 10 \
+            http://{{ include "erms.backend.fullname" . }}:8081/actuator/health/readiness
+          echo
+          echo "frontend /healthz:"
+          curl -fsS --retry 5 --retry-delay 3 --retry-all-errors --max-time 10 \
+            http://{{ include "erms.frontend.fullname" . }}:8080/healthz
+          echo
+          echo "all health checks passed"
+      securityContext:
+        {{- include "erms.containerSecurityContext" . | nindent 8 }}
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          memory: 64Mi

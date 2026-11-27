@@ -46,7 +46,7 @@ flowchart LR
 | **R**epudiation | Who deployed or cancelled? | Requests never deleted; `created_at/updated_at`; structured logs with requestId and user |
 | **I**nformation disclosure | Stack traces, password logging, other users' incidents | Generic 500s; no credential logging; per-record visibility (404); management port internal |
 | **D**enial of service | Unbounded search | Pagination (max 100); Hikari pool limits; resource limits in k8s. *Gap:* no login rate limit (future: ingress middleware or bucket4j) |
-| **E**levation of privilege | Fork PR runs code on the self-hosted runner | Runner used only by `cd.yml` (workflow_run from a master push of this repo + workflow_dispatch); fork-PR approval required; environment `local` limited to master |
+| **E**levation of privilege | Fork PR runs code on the self-hosted runner | Runner used only by `cd.yml` (workflow_run from a main push of this repo + workflow_dispatch); fork-PR approval required; environment `local` limited to main |
 
 ## OWASP Top 10 (2021) mapping
 See [ARCHITECTURE.md §7](ARCHITECTURE.md#7-security-baseline-owasp-top-10-2021-mapping). Summary: access control by ownership (A01), BCrypt + secret management (A02), parameterised SQL + LIKE escaping + CSP (A03), DB-enforced invariants (A04), hardened containers, NetworkPolicies, docs off by default (A05), Dependabot + Trivy + CodeQL (A06), generic auth errors + short-lived tokens (A07), sha-pinned images + SBOM/provenance (A08), JSON logs + metrics + audit trail (A09), no user-driven outbound calls (A10).
@@ -54,16 +54,37 @@ See [ARCHITECTURE.md §7](ARCHITECTURE.md#7-security-baseline-owasp-top-10-2021-
 ## Secrets handling
 | Secret | Where it lives | How it's created | Rotation |
 |---|---|---|---|
-| MySQL root and app passwords | k8s Secret `erms-secrets` (`mysql-root-password`, `mysql-password`) | Helm generates random values on first install, reuses them via `lookup`, `resource-policy: keep` | Delete the secret + PVC (local) or provide `secrets.existingSecret` |
-| JWT secret | `erms-secrets.jwt-secret` | Same as above (48 random chars) | Patch the secret, then `kubectl rollout restart deploy/erms-backend` (existing tokens become invalid) |
-| GHCR auth (CD) | `GITHUB_TOKEN`, job-scoped | Provided by Actions | Automatic |
-| Runner registration token | Not stored | `gh api …/registration-token` at setup (1 h validity) | n/a |
-| docker-compose dev values | `docker-compose.yml` | Literal `change-me-…` placeholders, dev only | n/a |
+| MySQL root and app passwords | k8s Secret `erms-secrets` (`mysql-root-password`, `mysql-password`) | Helm generates random values on first install (`randAlphaNum 24`), reuses them on every upgrade via `lookup`, `helm.sh/resource-policy: keep` | App password: `ALTER USER`, patch the secret, restart the backend ([RUNBOOK](RUNBOOK.md#9-rotate-secrets)). Local reset: delete the secret **and** the PVC together. Production: `secrets.existingSecret` |
+| JWT secret | `erms-secrets.jwt-secret` | Same as above (`randAlphaNum 48`) | Patch the secret, then `kubectl rollout restart deploy/erms-backend` (existing tokens become invalid) ([RUNBOOK](RUNBOOK.md#9-rotate-secrets)) |
+| External secret (production) | Any Secret named by `secrets.existingSecret` with the same three keys | Created out of band (e.g. External Secrets Operator / Sealed Secrets) | Owner's process; the chart then renders no Secret |
+| GHCR auth (CI push, CD pull) | `GITHUB_TOKEN`, job-scoped (`packages: write` only on the CI `images` job, `packages: read` in CD) | Provided by Actions | Automatic (expires with the job). CD stores it only in a job-scoped `DOCKER_CONFIG` under `$RUNNER_TEMP`, logs out and deletes it after every run |
+| Runner registration / removal token | Not stored | `gh api -X POST repos/…/actions/runners/{registration,remove}-token` at setup/uninstall (1 h validity), unset after use | n/a |
+| Runner credentials | `~/actions-runner/erms/.credentials*` (user-only files) | Written by `config.sh` | `make runner-uninstall && make runner-setup` |
+| docker-compose dev values | `docker-compose.yml` | Literal `change-me-dev-…` placeholders, labelled **DEV ONLY** | n/a (never used outside compose) |
 
-Rules: no secrets in git, images or ConfigMaps; `.env*` is gitignored; Trivy secret scanning runs in CI; GitHub secret scanning and push protection should be enabled on the repo.
+Rules: no secrets in git, images or ConfigMaps (the backend ConfigMap holds only non-secret settings; passwords and the JWT key are `secretKeyRef`s); `.env*`, keys and kubeconfigs are gitignored; Trivy secret scanning runs in CI; GitHub secret scanning and push protection are enabled by `scripts/setup-local-runner.sh`. `helm template` and client-side dry-runs can't `lookup`, so they print fresh random values. Never apply their output over a live release.
 
 ## Container & cluster hardening
-Non-root UIDs (backend 10001, frontend 101, mysql 999); `readOnlyRootFilesystem` for backend and frontend; `allowPrivilegeEscalation: false`; drop ALL capabilities; `seccompProfile: RuntimeDefault`; no service-account token automount; NetworkPolicies (mysql only from backend; apps only from the ingress namespace); resource requests and limits; images pinned by git-sha tag.
+| Control | Where |
+|---|---|
+| Non-root UIDs: backend 10001, frontend 10101, mysql 999, helm test 100; `runAsNonRoot: true` | Pod `securityContext` |
+| `readOnlyRootFilesystem: true` for backend (emptyDir `/tmp`), frontend (emptyDirs `/tmp`, `/var/cache/nginx`, `/etc/nginx/conf.d`), mysql (emptyDirs `/var/run/mysqld`, `/tmp`; toggle `mysql.readOnlyRootFilesystem`), initContainer and test pod | Container `securityContext` |
+| `allowPrivilegeEscalation: false`, `privileged: false`, `capabilities.drop: [ALL]`, `seccompProfile: RuntimeDefault` | Every container, including initContainers and the test pod |
+| Namespace `erms` enforces Pod Security Standard **restricted** (`pod-security.kubernetes.io/enforce=restricted`) | Set by `cd.yml` and `deploy-local.sh`; the chart passes a server-side dry-run under it |
+| Dedicated ServiceAccount, `automountServiceAccountToken: false` (SA and pods), `enableServiceLinks: false` | All pods |
+| NetworkPolicies: mysql:3306 only from backend pods; backend:8080 from the ingress-controller namespace (`kube-system`) and frontend pods; backend 8080/8081 and frontend 8080 from `helm test` pods (`app.kubernetes.io/component: test`); frontend:8080 from the ingress-controller namespace | `templates/networkpolicy.yaml` (k3s enforces them with its embedded controller) |
+| Management port 8081 is never routed by the Ingress; the smoke test asserts actuator health isn't public | Ingress + `smoke-test.sh` |
+| Resource requests and memory limits on every container; emptyDir `sizeLimit`s | values |
+| Images: application images by immutable git-sha tag; third-party images pinned by exact version (`mysql:8.4.13`, `busybox:1.37.0`, `curlimages/curl:8.23.0`); Dependabot (docker, helm, docker-compose ecosystems) bumps them | values, compose |
+| docker-compose: ports bound to `127.0.0.1`, `read_only`, `cap_drop: [ALL]`, `no-new-privileges` for backend and frontend | `docker-compose.yml` |
+
+### CI/CD and runner hardening
+- All third-party actions pinned to full commit SHAs; top-level `permissions: contents: read`, with elevated scopes only on the jobs that need them; `persist-credentials: false` on every checkout.
+- Images published only on push to `main`, multi-arch, with SBOM and `provenance: mode=max`; Trivy fs and image scans gate on CRITICAL, and SARIF goes to code scanning; CodeQL covers Java, TypeScript and the workflows themselves (`actions`).
+- The self-hosted runner is used **only** by `cd.yml` (`workflow_run` from a successful CI **push** on `main` of this repository, or `workflow_dispatch` on `main`); CI fails if any workflow combines `self-hosted` with a `pull_request` trigger.
+- Repository settings applied by `scripts/setup-local-runner.sh`: environment `local` limited to `main`; fork-PR workflow approval for all external contributors; default `GITHUB_TOKEN` read-only and unable to approve PRs; secret scanning + push protection.
+- The runner runs as a per-user LaunchAgent (never root), with a fixed `.path`. Its download is SHA-256 verified against the release notes and GitHub's asset digest. It keeps auto-updating.
+- Residual risk: anyone with write access can run `cd.yml` manually, which executes code from `main` on the Mac. Keep write access limited, and consider adding a required reviewer to environment `local`.
 
 ## HTTP security headers (frontend nginx)
 `Content-Security-Policy` (self only; inline styles allowed for MUI/emotion), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`, `server_tokens off`.

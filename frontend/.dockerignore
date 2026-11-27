@@ -1,0 +1,17 @@
+# Only what `npm ci && npm run build` needs goes into the build context.
+node_modules
+dist
+coverage
+.git
+.gitignore
+.vscode
+.idea
+*.log
+.env
+.env.*
+Dockerfile
+.dockerignore
+README.md
+**/*.test.ts
+**/*.test.tsx
+src/test
