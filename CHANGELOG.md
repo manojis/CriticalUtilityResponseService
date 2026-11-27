@@ -16,7 +16,7 @@ Modernization of the legacy proof of concept into an industry-standard, deployab
 - Container images for backend (non-root uid 10001) and frontend (nginx-unprivileged, uid 10101), both able to run with a read-only root filesystem.
 - Helm chart `deploy/helm/erms`: backend and frontend Deployments, a MySQL 8.4 StatefulSet with PVC, Traefik Ingress (`erms.localhost`), NetworkPolicies, restricted pod security, a stable chart-managed Secret, optional PDB/HPA, and a `helm test` hook ([ADR-0006](docs/adr/0006-helm-chart-in-chart-mysql.md)).
 - GitHub Actions: CI (backend verify, frontend lint/typecheck/test/build, helm lint + kubeconform, hadolint, actionlint, shellcheck, Trivy fs + image with SARIF, multi-arch GHCR images with SBOM and provenance), CD to Rancher Desktop through a self-hosted runner, CodeQL (Java, TypeScript, Actions) and Dependabot ([ADR-0007](docs/adr/0007-ci-github-hosted-cd-self-hosted.md)).
-- Scripts: `setup-local-runner.sh` (checksum-verified runner install, LaunchAgent, environment and repository hardening), `deploy-local.sh`, `smoke-test.sh` and `diagnostics.sh`.
+- Scripts: `setup-local-runner.sh` (checksum-verified runner install as the isolated, unprivileged macOS user `_ermsrunner` in a LaunchDaemon with a namespace-scoped Kubernetes ServiceAccount (`deploy/runner/deployer-rbac.yaml`) and no Docker access; `make runner-start`/`runner-stop`/`runner-status`; environment `local` with the owner as required reviewer; repository hardening), `deploy-local.sh`, `smoke-test.sh` and `diagnostics.sh`.
 - `docker-compose.yml` for local development, a `Makefile`, and documentation (architecture, API, data model, security, testing, deployment, CI/CD, runbook, ADRs, contributing guide).
 
 ### Changed

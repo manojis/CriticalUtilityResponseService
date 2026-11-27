@@ -21,8 +21,8 @@ flowchart LR
     end
     subgraph CD["CD (workflow_run: CI success on main push)"]
         direction TB
-        D1["self-hosted runner on Mac<br/>labels: self-hosted, macOS, ARM64, rancher-desktop"] --> D2[docker pull :sha into Rancher Desktop]
-        D2 --> D3["helm upgrade --install --rollback-on-failure --wait"]
+        D0["environment local: owner approves"] --> D1["self-hosted runner on Mac (user _ermsrunner)<br/>labels: self-hosted, macOS, ARM64, rancher-desktop"]
+        D1 --> D3["helm upgrade (k3s pulls ghcr :sha) --install --rollback-on-failure --wait"]
         D3 --> D4[helm test]
         D4 --> D5["smoke-test.sh http://erms.localhost"]
     end
@@ -33,11 +33,11 @@ flowchart LR
 | File | Name | Triggers | Runners | Permissions |
 |---|---|---|---|---|
 | `.github/workflows/ci.yml` | CI | `pull_request` (main), `push` (main), `workflow_dispatch` | ubuntu-latest | top level `contents: read`; `security-events: write` on `security`; `packages: write` + `security-events: write` on `images` |
-| `.github/workflows/cd.yml` | CD | `workflow_run` (CI completed on main), `workflow_dispatch` (`image_tag`, main only) | `[self-hosted, macOS, ARM64, rancher-desktop]` | `contents: read`, `packages: read` |
+| `.github/workflows/cd.yml` | CD | `workflow_run` (CI completed on main), `workflow_dispatch` (`image_tag`, main only) | `[self-hosted, macOS, ARM64, rancher-desktop]` | `contents: read` |
 | `.github/workflows/codeql.yml` | CodeQL | push/PR to main, weekly (Mon 04:27 UTC), `workflow_dispatch` | ubuntu-latest | `contents: read`, `security-events: write` |
 | `.github/dependabot.yml` | – | weekly (Monday): maven, npm, docker, docker-compose, helm, github-actions; minor/patch grouped | – | – |
 
-CI jobs: `backend` (`./mvnw -B -ntp verify` + reports), `frontend` (`npm ci`, lint, format:check, typecheck, test:coverage, build), `helm` (helm lint `--strict` with local and default values, kubeconform `-strict` against Kubernetes 1.36.0 for the local values and a production-style render), `dockerfiles` (hadolint, threshold `warning`), `infra-lint` (actionlint, shellcheck, and a guard that fails if any workflow combines `self-hosted` with a `pull_request` trigger), `security` (Trivy fs: vuln + secret + misconfig, SARIF upload, fails on CRITICAL), `images` (matrix backend/frontend; see below), `ci-result` (aggregates everything into one required check).
+CI jobs: `backend` (`./mvnw -B -ntp verify` + reports), `frontend` (`npm ci`, lint, format:check, typecheck, test:coverage, build), `helm` (helm lint `--strict` with local and default values, kubeconform `-strict` against Kubernetes 1.36.0 for the local values and a production-style render), `dockerfiles` (hadolint, threshold `warning`), `infra-lint` (actionlint, shellcheck, and a guard that fails if any workflow combines `self-hosted` with a `pull_request` trigger), `security` (Trivy fs: vuln + secret + misconfig, SARIF upload, fails on CRITICAL; accepted findings live in `.trivyignore.yaml`, each scoped to one file with a reason), `images` (matrix backend/frontend; see below), `ci-result` (aggregates everything into one required check).
 
 The `images` job builds `linux/amd64` + `linux/arm64` with buildx and pushes `ghcr.io/manojis/erms-{backend,frontend}:<sha>` and `:latest` with SBOM and provenance attestations **only on push to main**, then Trivy-scans the pushed sha (SARIF + gate on fixable CRITICAL). On pull requests and manual runs it builds `linux/amd64` only (`push: false`, `load: true`) and Trivy-scans the local image.
 
@@ -74,63 +74,77 @@ Inspect: `gh api repos/manojis/CriticalUtilityResponseService/rulesets`. To chan
 ## Environments
 | GitHub Environment | Used by | Protection |
 |---|---|---|
-| `local` | `cd.yml` → Rancher Desktop | Deployment branches: `main` only. Optional required reviewer |
+| `local` | `cd.yml` → Rancher Desktop | Deployment branches: `main` only. Required reviewer: `@manojis` (self-review allowed), so every deployment waits for **Review deployments → Approve and deploy** in the run (or `gh api` below) |
 
 ## Self-hosted runner (Rancher Desktop host)
-- Installed by `scripts/setup-local-runner.sh` into `~/actions-runner/erms`, running as a **LaunchAgent** under the user's account (so it can use `~/.rd/docker.sock` and `~/.kube/config`).
-- Labels: `self-hosted`, `macOS`, `ARM64` (automatic) + `rancher-desktop`.
-- `.path` includes `~/.rd/bin` so `docker`, `kubectl` and `helm` resolve.
-- Jobs queue while the Mac sleeps or Rancher Desktop is stopped, and run once it's back.
+The runner is isolated from your account. A malicious job could only reach what the runner user can reach:
 
+| Layer | Setting |
+|---|---|
+| macOS user | Hidden role account `_ermsrunner` (uid 450–499, no password, shell `/usr/bin/false`, not an admin). It cannot read `/Users/<you>` (mode 750) |
+| Service | System **LaunchDaemon** `dev.erms.actions-runner` (`/Library/LaunchDaemons`, `UserName=_ermsrunner`). Runs without anyone logged in; `make runner-stop` disables it across reboots |
+| Files | `/opt/erms-runner/bin` (root-owned `kubectl` + `helm`), `/opt/erms-runner/runner` and `/opt/erms-runner/home` (mode 700, runner only), logs in `/Library/Logs/erms-runner` |
+| Docker | **No access** to `~/.rd/docker.sock` (that socket is root-equivalent in the Rancher VM). k3s pulls the public GHCR images by sha |
+| Kubernetes | kubeconfig for the ServiceAccount `erms/erms-deployer` ([deploy/runner/deployer-rbac.yaml](../deploy/runner/deployer-rbac.yaml)): manage the chart's resources in namespace `erms` only. No nodes, namespaces, RBAC, `pods/exec` or other namespaces. The script verifies this with `kubectl auth can-i` |
+| GitHub | Environment `local`: deployments from `main` only, and each waits for the owner's approval |
 
-Install (idempotent; re-run it any time to repair):
+Labels: `self-hosted`, `macOS`, `ARM64` (automatic) + `rancher-desktop`. Jobs queue while the runner is stopped, the Mac sleeps or Rancher Desktop is down, and run once it's back (queued jobs expire after 24 h).
+
+Install (idempotent; re-run it any time to repair). Run it as yourself; it asks for your password for the `sudo` steps:
 ```bash
 gh auth login                      # admin on manojis/CriticalUtilityResponseService
 make runner-setup                  # = scripts/setup-local-runner.sh [--repo owner/name] [--name NAME]
 ```
-What it does, in order: preflight (macOS arm64, `gh auth status` + repo admin, `docker info`, `kubectl --context rancher-desktop get nodes`, `helm`, `rdctl` Kubernetes check) → downloads the latest `actions/runner` osx-arm64 tarball and verifies its SHA-256 against the hash in the release notes (cross-checked with GitHub's asset digest) → registers with `config.sh --unattended --replace --labels rancher-desktop --name <LocalHostName>-rancher-desktop` using a short-lived registration token from `gh api -X POST repos/…/actions/runners/registration-token` (skipped if already registered) → writes `.path`/`.env` → `./svc.sh install && ./svc.sh start` (LaunchAgent) → hardening (below). `--skip-hardening` skips the repository settings.
+What it does, in order: preflight (macOS arm64, `gh` + repo admin, `kubectl`/`helm`, context `rancher-desktop` reachable, `sudo -v`) → creates `_ermsrunner` with `dscl` (if missing) and the directories → installs `kubectl` matching the cluster version from `dl.k8s.io` (SHA-256 verified) and copies Rancher Desktop's `helm` into `/opt/erms-runner/bin` → `kubectl apply -f deploy/runner/deployer-rbac.yaml` (namespace with Pod Security `restricted`, ServiceAccount, Role, RoleBinding, token Secret) and writes the runner's kubeconfig (context `rancher-desktop`, mode 600) → downloads the latest `actions/runner` osx-arm64 tarball, verifies its SHA-256 against the release notes (cross-checked with GitHub's asset digest) and extracts it as `_ermsrunner` → registers with `config.sh --unattended --replace --labels rancher-desktop --name <LocalHostName>-rancher-desktop` using a short-lived registration token (skipped if already registered) → writes `.path`/`.env` → installs and starts the LaunchDaemon → hardening (below). `--skip-hardening` skips the repository settings.
 
 Operate:
 ```bash
-cd ~/actions-runner/erms
-./svc.sh status                                   # loaded + PID
-./svc.sh stop && ./svc.sh start                   # restart
-ls ~/Library/Logs/actions.runner.manojis-CriticalUtilityResponseService.*/   # stdout.log, stderr.log
-tail -n 100 _diag/Runner_*.log                    # runner diagnostics; job logs: _diag/Worker_*.log
-gh api repos/manojis/CriticalUtilityResponseService/actions/runners --jq '.runners[] | {name, status, busy}'
+make runner-status                 # launchd state + GitHub online/busy
+make runner-stop                   # stop now and stay off across reboots (sudo)
+make runner-start                  # enable and start again (sudo)
+sudo tail -n 50 /Library/Logs/erms-runner/stderr.log
+sudo sh -c 'tail -n 100 /opt/erms-runner/runner/_diag/Runner_*.log'   # job logs: _diag/Worker_*.log
 ```
 
-Uninstall:
+Approve a waiting deployment from the terminal (or click **Review deployments** in the run):
 ```bash
-make runner-uninstall              # = scripts/setup-local-runner.sh --uninstall (stops/removes the LaunchAgent, unregisters)
-rm -rf ~/actions-runner/erms       # optional: delete the files
+RUN=$(gh run list --workflow cd.yml --status waiting -L1 --json databaseId -q '.[0].databaseId')
+ENV_ID=$(gh api repos/manojis/CriticalUtilityResponseService/environments/local -q .id)
+gh api -X POST repos/manojis/CriticalUtilityResponseService/actions/runs/$RUN/pending_deployments \
+  -F "environment_ids[]=$ENV_ID" -f state=approved -f comment="deploy"
 ```
 
-The CD job uses a job-scoped `DOCKER_CONFIG` under `$RUNNER_TEMP` and `DOCKER_HOST=unix://$HOME/.rd/docker.sock`, so the GHCR login never touches your own `~/.docker/config.json`. It logs out and deletes that directory at the end of every run.
+Uninstall (removes the LaunchDaemon, unregisters the runner, deletes `/opt/erms-runner`, the logs, the `_ermsrunner` user and the ServiceAccount/RBAC; the app in namespace `erms` is left running):
+```bash
+make runner-uninstall              # = scripts/setup-local-runner.sh --uninstall
+```
 
 ### Public-repository safeguards (mandatory)
 1. Only `cd.yml` targets the self-hosted runner. Its triggers are `workflow_run` (with `event == 'push'` and the head repository equal to this repo) and `workflow_dispatch` (write access required).
 2. No workflow with a `pull_request` or `pull_request_target` trigger may use `runs-on: self-hosted`. QA verifies this, and reviewers must reject PRs that add it.
 3. Fork-PR workflows require maintainer approval for **all external contributors** (`fork-pr-contributor-approval` = `all_external_contributors`, applied by the setup script). The script also sets the default `GITHUB_TOKEN` to read-only, stops workflows from approving PRs, and enables secret scanning with push protection.
-4. Environment `local` only accepts deployments from `main` (custom deployment branch policy, created by the setup script).
+4. Environment `local` only accepts deployments from `main` (custom deployment branch policy), and the repository owner must approve each deployment (required reviewer). Both are applied by the setup script.
 5. The CD job checks out the exact `head_sha` that CI validated and deploys images by that sha. A manual `image_tag` is validated against `^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$` and passed through `env`, never interpolated into scripts.
 6. CI enforces rule 2 automatically (the `infra-lint` job's self-hosted guard). Checkouts use `persist-credentials: false`.
+7. The runner is an unprivileged macOS user without the docker socket and with a namespace-scoped kubeconfig (see the table above), so even an approved job that misbehaves cannot read your files or administer the cluster.
 
 ## Image tagging & promotion
 `<git-sha>` (immutable, deployed) and `latest` (convenience only, never deployed by CD). To promote or roll back, redeploy a sha via `workflow_dispatch` (see [DEPLOYMENT.md → Rollback](DEPLOYMENT.md#rollback)).
 
 ## Secrets & tokens
-No repository secrets are needed. CI and CD use the job-scoped `GITHUB_TOKEN` for GHCR. Packages pushed by CI are linked to this repository through the `org.opencontainers.image.source` label, which gives the repository's workflows read access for CD. Kubernetes secrets are generated in-cluster by Helm ([SECURITY.md](SECURITY.md#secrets-handling)).
+No repository secrets are needed. CI uses the job-scoped `GITHUB_TOKEN` to push to GHCR. The packages `erms-backend` and `erms-frontend` are **public**, so k3s pulls them anonymously and CD needs no registry credentials. Kubernetes secrets are generated in-cluster by Helm ([SECURITY.md](SECURITY.md#secrets-handling)).
 
 ## Troubleshooting
 | Symptom | Likely cause | Action |
 |---|---|---|
-| CD job queued forever | Runner offline (Mac asleep, Rancher Desktop stopped) | Start Rancher Desktop; check the runner service status |
-| `docker: command not found` in CD | Runner PATH | Re-run the setup script (rewrites `.path`) |
+| CD job `Waiting` | Environment `local` needs your approval | Click **Review deployments** in the run, or use the `gh api` command above |
+| CD job queued forever | Runner stopped or offline (Mac asleep, Rancher Desktop stopped) | `make runner-status`; `make runner-start`; start Rancher Desktop |
+| `kubectl`/`helm: command not found` in CD | Runner PATH | Re-run `make runner-setup` (rewrites `.path`) |
+| Preflight: `runner identity cannot deploy` | ServiceAccount, token or namespace deleted (e.g. Rancher Desktop reset) | Re-run `make runner-setup` |
 | `helm upgrade` timed out → rolled back | Pod not ready (DB, image, probe) | See [RUNBOOK.md](RUNBOOK.md) diagnostics; the CD job dumps pod events and logs on failure |
 | `manifest unknown` on pull | Images job skipped or failed | Check the CI run's images job for that sha |
 | `Flag --atomic has been deprecated` | Helm 4 renamed the flag | Use `--rollback-on-failure` (scripts and CD detect the Helm major version) |
-| CD `docker pull` → `denied` | The GHCR package is not linked to the repo / Actions access missing | Package settings → Manage Actions access → add this repository (Read). Check that the image has the `org.opencontainers.image.source` label |
+| `ImagePullBackOff` (`denied`/`unauthorized`) | A GHCR package is private | Package settings → Change visibility → Public |
 | `upload-sarif` fails on a fork PR | Fork PR tokens are read-only | Expected; the upload step is skipped for fork PRs |
 | actionlint: `label "rancher-desktop" is unknown` | Custom runner label | Declared in `.github/actionlint.yaml` |
 | `$K get pods` fails in zsh with "command not found" | zsh doesn't word-split variables | Use the `k()` function from [RUNBOOK.md](RUNBOOK.md) |

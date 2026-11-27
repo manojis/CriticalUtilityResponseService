@@ -140,12 +140,12 @@ Never edit an applied migration; fix forward with a new `V<n>__…sql`. Local on
 
 ### 12. Runner issues
 ```bash
-cd ~/actions-runner/erms && ./svc.sh status                    # LaunchAgent loaded? PID?
-./svc.sh stop && ./svc.sh start                                 # restart
-ls ~/Library/Logs/actions.runner.manojis-CriticalUtilityResponseService.*/   # stdout.log / stderr.log
-tail -n 100 ~/actions-runner/erms/_diag/Runner_*.log            # runner diagnostics
-gh api repos/manojis/CriticalUtilityResponseService/actions/runners --jq '.runners[] | {name, status, busy, labels: [.labels[].name]}'
-scripts/setup-local-runner.sh                                   # idempotent repair (rewrites .path/.env, restarts)
+make runner-status                                              # LaunchDaemon state + GitHub online/busy
+make runner-stop && make runner-start                           # restart (sudo)
+sudo tail -n 100 /Library/Logs/erms-runner/stderr.log           # service stdout/stderr
+sudo sh -c 'tail -n 100 /opt/erms-runner/runner/_diag/Runner_*.log'   # runner diagnostics
+gh run list --workflow cd.yml -L5                               # "waiting" = needs your approval (docs/CICD.md)
+make runner-setup                                               # idempotent repair (tools, kubeconfig, .path/.env, service)
 ```
 
 ### 13. Verify the NetworkPolicy (QA)
@@ -160,7 +160,7 @@ k run np-probe --rm -i --restart=Never --image=busybox:1.37.0 --overrides='{"api
 |---|---|---|
 | backend `Init:0/1` for a long time | MySQL not ready (first start initialises the data dir, about 30–60 s) | Wait; check mysql logs |
 | backend CrashLoopBackOff, "ERMS_JWT_SECRET must be ≥ 32 bytes" | Secret missing or short | Check `erms-secrets`; reinstall or patch |
-| `ImagePullBackOff` | sha image not in the local moby store (pruned, or Rancher Desktop was reset) and not pullable anonymously from GHCR | `docker pull ghcr.io/manojis/erms-backend:<sha>` (CD normally does this), or `make deploy-local` |
+| `ImagePullBackOff` | sha not on GHCR (images job failed), a GHCR package made private, or a `local-…` tag missing from the local moby store | Check the CI images job; keep the packages public; `make deploy-local` for local tags |
 | 404 from Traefik | Release not installed, or Ingress host mismatch | `k get ingress erms`; use `http://erms.localhost`; check `ingress.host` |
 | All logins fail after a redeploy | DB volume recreated without the demo profile | Make sure `backend.profiles=demo` for local |
 | Everything down after a Mac restart | Rancher Desktop not started | Start Rancher Desktop; pods recover automatically (PVC keeps data) |

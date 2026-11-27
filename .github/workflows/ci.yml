@@ -190,6 +190,7 @@ jobs:
           scanners: vuln,secret,misconfig
           severity: CRITICAL,HIGH
           ignore-unfixed: true
+          trivyignores: .trivyignore.yaml
           format: sarif
           output: trivy-fs.sarif
           exit-code: "0"
@@ -210,6 +211,7 @@ jobs:
           scanners: vuln,secret,misconfig
           severity: CRITICAL
           ignore-unfixed: true
+          trivyignores: .trivyignore.yaml
           format: table
           exit-code: "1"
 

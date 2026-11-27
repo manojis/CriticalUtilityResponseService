@@ -87,22 +87,22 @@ With the `demo` profile (compose and Rancher Desktop), these users exist, all wi
 flowchart LR
     PR[Pull request] --> CI1[CI: tests, lint, helm/kubeconform,<br/>hadolint, Trivy, CodeQL, image build]
     M[Push to main] --> CI2[CI: same + multi-arch images<br/>to GHCR :sha :latest]
-    CI2 -->|workflow_run success| CD[CD on self-hosted Mac runner:<br/>docker pull :sha, helm upgrade --rollback-on-failure,<br/>helm test, smoke test]
+    CI2 -->|workflow_run success| CD[CD on self-hosted Mac runner, after owner approval:<br/>helm upgrade :sha --rollback-on-failure,<br/>helm test, smoke test]
 ```
 
 - **CI** (`.github/workflows/ci.yml`) runs on GitHub-hosted runners for every PR and push to `main`. Images are pushed to `ghcr.io/manojis/erms-backend` and `ghcr.io/manojis/erms-frontend` only on push to `main`.
-- **CD** (`.github/workflows/cd.yml`) runs only after a successful CI push build on `main` of this repository (or a manual dispatch on `main`). It targets the self-hosted runner labelled `rancher-desktop` under the GitHub environment `local`.
+- **CD** (`.github/workflows/cd.yml`) runs only after a successful CI push build on `main` of this repository (or a manual dispatch on `main`). It targets the self-hosted runner labelled `rancher-desktop` under the GitHub environment `local`, which waits for the owner's approval before each deployment.
 - **This repository is public.** No `pull_request` workflow ever targets the self-hosted runner. See [docs/CICD.md](docs/CICD.md#public-repository-safeguards-mandatory).
 
 ### Self-hosted runner setup (once per Mac)
 
 ```bash
 gh auth login                       # needs admin rights on the repository
-make runner-setup                   # = scripts/setup-local-runner.sh
-cd ~/actions-runner/erms && ./svc.sh status
+make runner-setup                   # = scripts/setup-local-runner.sh (asks for your password for sudo)
+make runner-status                  # make runner-stop / make runner-start
 ```
 
-The script checks the prerequisites, downloads the latest `actions/runner` for osx-arm64 (SHA-256 verified), registers it with the label `rancher-desktop`, installs it as a LaunchAgent, creates the `local` environment (deployments from `main` only), and applies the public-repository hardening. Remove it with `make runner-uninstall`.
+The script creates a hidden, unprivileged macOS user `_ermsrunner`, gives it a kubeconfig limited to namespace `erms` and no Docker access, downloads the latest `actions/runner` for osx-arm64 (SHA-256 verified), registers it with the label `rancher-desktop`, runs it as a LaunchDaemon, sets up the `local` environment (deployments from `main` only, your approval required) and applies the public-repository hardening. See [docs/CICD.md](docs/CICD.md#self-hosted-runner-rancher-desktop-host). Remove it with `make runner-uninstall`.
 
 ## Common commands
 
@@ -115,7 +115,7 @@ The script checks the prerequisites, downloads the latest `actions/runner` for o
 | `make images` | Build both images locally |
 | `make up` / `make down` | Compose stack |
 | `make deploy-local` / `make smoke` / `make status` | Rancher Desktop deploy, smoke test, status |
-| `make runner-setup` / `make runner-uninstall` | Self-hosted runner |
+| `make runner-setup` / `runner-start` / `runner-stop` / `runner-status` / `runner-uninstall` | Self-hosted runner |
 
 ## Documentation
 
