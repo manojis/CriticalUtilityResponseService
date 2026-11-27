@@ -13,7 +13,7 @@ RUN --mount=type=cache,target=/root/.m2 \
     ./mvnw -B -ntp -DskipTests -Djacoco.skip=true -Dspotless.skip=true package \
  && java -Djarmode=tools -jar target/app.jar extract --layers --launcher --destination /extracted
 
-FROM eclipse-temurin:21-jre-alpine
+FROM eclipse-temurin:25-jre-alpine
 ARG VERSION=0.1.0
 ARG REVISION=unknown
 LABEL org.opencontainers.image.title="erms-backend" \
