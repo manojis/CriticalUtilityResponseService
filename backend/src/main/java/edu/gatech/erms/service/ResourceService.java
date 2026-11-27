@@ -88,7 +88,7 @@ public class ResourceService {
     long resourceId = resources.insert(resource);
     resources.insertCapabilities(resourceId, capabilities);
     resources.insertAdditionalEsfs(resourceId, additionalEsfs);
-    log.info("Resource {} created by {}", resourceId, ownerUsername);
+    log.info("Resource {} created by {}", resourceId, LogSafe.of(ownerUsername));
     return resources
         .findDetail(resourceId)
         .orElseThrow(() -> new IllegalStateException("Resource vanished after insert"));

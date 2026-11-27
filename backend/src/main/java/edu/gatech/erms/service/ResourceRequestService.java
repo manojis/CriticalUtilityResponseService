@@ -111,7 +111,7 @@ public class ResourceRequestService {
     log.info(
         "Request {} created by {} for resource {} / incident {} as {}",
         requestId,
-        callerUsername,
+        LogSafe.of(callerUsername),
         command.resourceId(),
         incident.incidentId(),
         status);

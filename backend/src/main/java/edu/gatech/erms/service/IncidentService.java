@@ -57,7 +57,7 @@ public class IncidentService {
             scaleCoordinate(command.longitude()),
             ownerUsername);
     incidents.insert(incident);
-    log.info("Incident {} created by {}", incidentId, ownerUsername);
+    log.info("Incident {} created by {}", incidentId, LogSafe.of(ownerUsername));
     return incident;
   }
 
