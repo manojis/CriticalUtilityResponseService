@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 #
 # ERMS frontend image (contract: docs/ARCHITECTURE.md §4.5)
-#   - nginx-unprivileged, uid/gid 101, listens on 8080
+#   - nginx-unprivileged, runs as uid/gid 10101 (all writes go to /tmp), listens on 8080
 #   - env BACKEND_URL (default http://backend:8080) → upstream for /api/
 #   - GET /healthz → 200 "ok"
 #   - runs with a read-only root filesystem; only /tmp must be writable (tmpfs / emptyDir).
@@ -37,7 +37,7 @@ LABEL org.opencontainers.image.title="erms-frontend" \
 ENV BACKEND_URL=http://backend:8080 \
     NGINX_ENVSUBST_OUTPUT_DIR=/tmp
 
-# Replace the stock server config; config files are root-owned and read-only for uid 101.
+# Replace the stock server config; config files are root-owned and read-only for the runtime user.
 USER 0
 # Pick up Alpine security fixes published after the base image was built (Trivy gates on CRITICAL).
 RUN apk upgrade --no-cache && rm -f /etc/nginx/conf.d/default.conf
@@ -46,7 +46,7 @@ COPY --chown=root:root nginx/default.conf.template /etc/nginx/templates/default.
 COPY --from=build --chown=root:root /app/dist /usr/share/nginx/html
 
 # Numeric user so Kubernetes can verify runAsNonRoot. pid file is /tmp/nginx.pid in this image.
-USER 101:101
+USER 10101:10101
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \

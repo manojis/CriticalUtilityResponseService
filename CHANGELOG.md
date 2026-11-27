@@ -13,7 +13,7 @@ Modernization of the legacy proof of concept into an industry-standard, deployab
 - Server-side request state machine (PENDING → DEPLOYED → RETURNED, REJECTED, CANCELLED) with derived resource availability and DB-enforced invariants.
 - New frontend: Vite + React 19 + strict TypeScript + MUI with an API client, auth context, protected routes, and Vitest/RTL/MSW tests ([ADR-0005](docs/adr/0005-frontend-vite-react-ts-mui.md)).
 - Separate management port 8081 with Kubernetes probes, Prometheus metrics, and ECS JSON logs with `requestId` ([ADR-0008](docs/adr/0008-observability-and-management-port.md)).
-- Container images for backend (non-root uid 10001) and frontend (nginx-unprivileged uid 101), both able to run with a read-only root filesystem.
+- Container images for backend (non-root uid 10001) and frontend (nginx-unprivileged, uid 10101), both able to run with a read-only root filesystem.
 - Helm chart `deploy/helm/erms`: backend and frontend Deployments, a MySQL 8.4 StatefulSet with PVC, Traefik Ingress (`erms.localhost`), NetworkPolicies, restricted pod security, a stable chart-managed Secret, optional PDB/HPA, and a `helm test` hook ([ADR-0006](docs/adr/0006-helm-chart-in-chart-mysql.md)).
 - GitHub Actions: CI (backend verify, frontend lint/typecheck/test/build, helm lint + kubeconform, hadolint, actionlint, shellcheck, Trivy fs + image with SARIF, multi-arch GHCR images with SBOM and provenance), CD to Rancher Desktop through a self-hosted runner, CodeQL (Java, TypeScript, Actions) and Dependabot ([ADR-0007](docs/adr/0007-ci-github-hosted-cd-self-hosted.md)).
 - Scripts: `setup-local-runner.sh` (checksum-verified runner install, LaunchAgent, environment and repository hardening), `deploy-local.sh`, `smoke-test.sh` and `diagnostics.sh`.

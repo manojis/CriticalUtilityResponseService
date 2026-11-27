@@ -69,7 +69,7 @@ docker run --rm -p 3000:8080 --read-only --tmpfs /tmp \
 | Property          | Value                                                                                                                                                                          |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Base              | `nginxinc/nginx-unprivileged:1.29-alpine` (build stage `node:24-alpine`)                                                                                                       |
-| User              | `101:101` (numeric, non-root)                                                                                                                                                  |
+| User              | `10101:10101` (numeric, non-root)                                                                                                                                              |
 | Port              | `8080`                                                                                                                                                                         |
 | Health            | `GET /healthz` → `200 ok` (Docker `HEALTHCHECK` uses it)                                                                                                                       |
 | Env `BACKEND_URL` | Upstream for `/api/` (default `http://backend:8080`, no trailing slash). The host must resolve when the container starts, or nginx exits with `host not found in upstream`     |
@@ -81,7 +81,7 @@ docker run --rm -p 3000:8080 --read-only --tmpfs /tmp \
 A hardened run, matching Kubernetes:
 
 ```bash
-docker run --rm -p 3000:8080 --user 101:101 --read-only \
+docker run --rm -p 3000:8080 --user 10101:10101 --read-only \
   --tmpfs /tmp --tmpfs /var/cache/nginx --tmpfs /etc/nginx/conf.d \
   --cap-drop ALL --security-opt no-new-privileges \
   --add-host backend:host-gateway erms-frontend:dev

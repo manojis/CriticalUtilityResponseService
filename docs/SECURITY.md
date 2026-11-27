@@ -67,7 +67,7 @@ Rules: no secrets in git, images or ConfigMaps (the backend ConfigMap holds only
 ## Container & cluster hardening
 | Control | Where |
 |---|---|
-| Non-root UIDs: backend 10001, frontend 101, mysql 999, helm test 100; `runAsNonRoot: true` | Pod `securityContext` |
+| Non-root UIDs: backend 10001, frontend 10101, mysql 999, helm test 100; `runAsNonRoot: true` | Pod `securityContext` |
 | `readOnlyRootFilesystem: true` for backend (emptyDir `/tmp`), frontend (emptyDirs `/tmp`, `/var/cache/nginx`, `/etc/nginx/conf.d`), mysql (emptyDirs `/var/run/mysqld`, `/tmp`; toggle `mysql.readOnlyRootFilesystem`), initContainer and test pod | Container `securityContext` |
 | `allowPrivilegeEscalation: false`, `privileged: false`, `capabilities.drop: [ALL]`, `seccompProfile: RuntimeDefault` | Every container, including initContainers and the test pod |
 | Namespace `erms` enforces Pod Security Standard **restricted** (`pod-security.kubernetes.io/enforce=restricted`) | Set by `cd.yml` and `deploy-local.sh`; the chart passes a server-side dry-run under it |

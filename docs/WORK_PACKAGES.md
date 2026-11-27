@@ -53,7 +53,7 @@ Environment notes (developer Mac): Java 21 is installed. Maven is **not** instal
 
 **Acceptance criteria**
 - `npm ci && npm run lint && npm run format:check && npm run typecheck && npm run test:coverage && npm run build` all pass.
-- `docker build -t erms-frontend:dev frontend` succeeds. The container runs as uid 101 with `--read-only --tmpfs /tmp --tmpfs /var/cache/nginx --tmpfs /etc/nginx/conf.d`. `/healthz` returns 200. Deep links (e.g. `/resource-status`) serve index.html. The security headers are present.
+- `docker build -t erms-frontend:dev frontend` succeeds. The container runs as uid 10101 with `--read-only --tmpfs /tmp --tmpfs /var/cache/nginx --tmpfs /etc/nginx/conf.d`. `/healthz` returns 200. Deep links (e.g. `/resource-status`) serve index.html. The security headers are present.
 - No hardcoded `localhost` URLs in `src/`, and no `console.log`.
 
 ---
