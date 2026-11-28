@@ -51,7 +51,7 @@ Namespace: `erms`. Release name: `erms`. Kube context: `rancher-desktop`.
 ## 3. Backend
 
 ### 3.1 Stack
-Java 21 · Spring Boot **4.1.3** · Maven 3.9.x via wrapper · MySQL 8.4 LTS · HikariCP · `NamedParameterJdbcTemplate` (no JPA, see ADR-0002) · Flyway · Spring Security + `spring-boot-starter-oauth2-resource-server` (Nimbus JWT, HS256) · Bean Validation · Actuator + Micrometer Prometheus · springdoc-openapi (the version line that supports Boot 4) · JUnit 5, Mockito, AssertJ, Testcontainers (MySQL) · JaCoCo · Spotless (google-java-format).
+Java 21 (bytecode level; Java 25 runtime) · Spring Boot **4.2.0** · Maven 3.10.x via wrapper · MySQL 26.10 · HikariCP · `NamedParameterJdbcTemplate` (no JPA, see ADR-0002) · Flyway · Spring Security + `spring-boot-starter-oauth2-resource-server` (Nimbus JWT, HS256) · Bean Validation · Actuator + Micrometer Prometheus · springdoc-openapi (the version line that supports Boot 4) · JUnit 5, Mockito, AssertJ, Testcontainers (MySQL) · JaCoCo · Spotless (google-java-format).
 
 Boot 4 uses modular starters. Expected: `spring-boot-starter-webmvc`, `spring-boot-starter-jdbc`, `spring-boot-starter-flyway` (+ `flyway-mysql`), `spring-boot-starter-validation`, `spring-boot-starter-security`, `spring-boot-starter-oauth2-resource-server`, `spring-boot-starter-actuator`, `micrometer-registry-prometheus`, `mysql-connector-j` (runtime), plus test starters (`spring-boot-starter-webmvc-test`, `spring-boot-starter-security-test` or `spring-security-test`, `spring-boot-testcontainers`, the Testcontainers MySQL + JUnit Jupiter modules). **Compile to verify artifact names. Do not guess-and-leave.** Remove the explicit `jackson-databind`/`commons-lang3` pins and let the Boot BOM manage them.
 
@@ -302,13 +302,13 @@ ORDER BY e.esf_number;
 - Spotless check (google-java-format) runs in `verify`.
 - Unit tests (`*Test`, Surefire): services with Mockito, plus validation and the JWT service.
 - Web slice tests (`@WebMvcTest` + `spring-security-test`): status codes, ProblemDetail shape, auth required.
-- Integration tests (`*IT`, Failsafe, Testcontainers `mysql:8.4`, `@ServiceConnection`): Flyway applies cleanly; every repository query; full request lifecycle; incident id concurrency (10 parallel creates → 10 distinct sequential ids); search filters including the legacy bug regressions in §6.
+- Integration tests (`*IT`, Failsafe, Testcontainers `mysql:26.10.0.1`, `@ServiceConnection`): Flyway applies cleanly; every repository query; full request lifecycle; incident id concurrency (10 parallel creates → 10 distinct sequential ids); search filters including the legacy bug regressions in §6.
 - JaCoCo: merge unit + IT; `check` rule ≥ **80% line coverage** on `service` and `repository` packages, ≥ 70% overall bundle (exclude `ErmsApplication`, `config`, `api.dto`).
 - Running Testcontainers locally on Rancher Desktop: `DOCKER_HOST=unix://$HOME/.rd/docker.sock TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock`. Document this in backend/README.md.
 
 ### 3.11 Backend image contract (`backend/Dockerfile`)
-- Build stage: `FROM --platform=$BUILDPLATFORM maven:3.9-eclipse-temurin-21` → `./mvnw -B -DskipTests package` with a BuildKit cache mount for `~/.m2` → `java -Djarmode=tools -jar app.jar extract --layers --launcher --destination /extracted`.
-- Runtime: `eclipse-temurin:21-jre-alpine`, user `10001:10001` (numeric `USER`), copy the layers in order (dependencies, spring-boot-loader, snapshot-dependencies, application), `ENTRYPOINT ["java","org.springframework.boot.loader.launch.JarLauncher"]`, `EXPOSE 8080 8081`, `HEALTHCHECK` via `wget -qO- http://127.0.0.1:8081/actuator/health/liveness`. Must run with a read-only root filesystem when `/tmp` is writable. OCI labels (`org.opencontainers.image.source` etc.).
+- Build stage: `FROM --platform=$BUILDPLATFORM maven:3.9-eclipse-temurin-26` → `./mvnw -B -DskipTests package` with a BuildKit cache mount for `~/.m2` → `java -Djarmode=tools -jar app.jar extract --layers --launcher --destination /extracted`.
+- Runtime: `eclipse-temurin:25-jre-alpine`, user `10001:10001` (numeric `USER`), copy the layers in order (dependencies, spring-boot-loader, snapshot-dependencies, application), `ENTRYPOINT ["java","org.springframework.boot.loader.launch.JarLauncher"]`, `EXPOSE 8080 8081`, `HEALTHCHECK` via `wget -qO- http://127.0.0.1:8081/actuator/health/liveness`. Must run with a read-only root filesystem when `/tmp` is writable. OCI labels (`org.opencontainers.image.source` etc.).
 - CI runs tests separately, so the image build skips them.
 
 ---
@@ -395,7 +395,7 @@ Every page has loading, empty and error states (the error state has Retry where 
 ## 5. Platform
 
 ### 5.1 docker-compose.yml (local dev, no k8s)
-Services: `mysql` (`mysql:8.4`, db `erms`, user `erms`, healthcheck `mysqladmin ping`, named volume), `backend` (build `./backend`, `SPRING_PROFILES_ACTIVE=demo`, `ERMS_API_DOCS_ENABLED=true`, dev-only placeholder secrets clearly labelled `change-me-…`, `depends_on: mysql: condition: service_healthy`), `frontend` (build `./frontend`, `BACKEND_URL=http://backend:8080`, port `3000:8080`). `http://localhost:3000` must give a fully working app.
+Services: `mysql` (`mysql:26.10.0.1`, db `erms`, user `erms`, healthcheck `mysqladmin ping`, named volume), `backend` (build `./backend`, `SPRING_PROFILES_ACTIVE=demo`, `ERMS_API_DOCS_ENABLED=true`, dev-only placeholder secrets clearly labelled `change-me-…`, `depends_on: mysql: condition: service_healthy`), `frontend` (build `./frontend`, `BACKEND_URL=http://backend:8080`, port `3000:8080`). `http://localhost:3000` must give a fully working app.
 
 ### 5.2 Helm chart `deploy/helm/erms`
 Files: `Chart.yaml` (apiVersion v2, version 0.1.0, appVersion "0.1.0"), `values.yaml`, `values-local.yaml`, `values.schema.json` (optional, recommended), `templates/`: `_helpers.tpl`, `serviceaccount.yaml` (automount false), `secret.yaml`, `backend-configmap.yaml`, `backend-deployment.yaml`, `backend-service.yaml`, `frontend-deployment.yaml`, `frontend-service.yaml`, `mysql-statefulset.yaml`, `mysql-service.yaml` (headless `erms-mysql-headless` + ClusterIP `erms-mysql`), `ingress.yaml`, `networkpolicy.yaml`, `pdb.yaml` (enabled when replicas > 1), `hpa.yaml` (disabled by default), `NOTES.txt`, `tests/test-health.yaml`.
@@ -408,7 +408,7 @@ backend:  { image: { repository: erms-backend,  tag: "", pullPolicy: IfNotPresen
             resources: { requests: { cpu: 250m, memory: 512Mi }, limits: { memory: 1Gi } } }
 frontend: { image: { repository: erms-frontend, tag: "", pullPolicy: IfNotPresent }, replicas: 1,
             resources: { requests: { cpu: 50m, memory: 64Mi }, limits: { memory: 128Mi } } }
-mysql:    { image: mysql:8.4, database: erms, username: erms, storage: { size: 2Gi, storageClass: "" },
+mysql:    { image: mysql:26.10.0.1, database: erms, username: erms, storage: { size: 2Gi, storageClass: "" },
             resources: { requests: { cpu: 250m, memory: 512Mi }, limits: { memory: 1Gi } } }
 secrets:  { existingSecret: "" }      # else chart-managed secret
 ingress:  { enabled: true, className: traefik, host: erms.localhost }
@@ -418,7 +418,7 @@ networkPolicy: { enabled: true, ingressControllerNamespace: kube-system }
 
 Requirements:
 - **Secret** `erms-secrets` keys `mysql-root-password`, `mysql-password`, `jwt-secret`. Use `lookup` to reuse existing values on upgrade, else `randAlphaNum` (48 for JWT, 24 for passwords). Annotate `helm.sh/resource-policy: keep`. Skip the whole template when `secrets.existingSecret` is set.
-- **Backend Deployment**: env from the ConfigMap plus secretKeyRefs (`SPRING_DATASOURCE_PASSWORD`, `ERMS_JWT_SECRET`). `SPRING_DATASOURCE_URL=jdbc:mysql://erms-mysql:3306/erms?connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true`. initContainer `busybox:1.37` waits for `nc -z erms-mysql 3306` (same restricted securityContext). Probes on port `management` (8081): startupProbe `/actuator/health/liveness` (failureThreshold 30, period 5), livenessProbe `/actuator/health/liveness`, readinessProbe `/actuator/health/readiness`. `terminationGracePeriodSeconds: 30`, `preStop` `sleep 5`. Pod annotations `prometheus.io/scrape: "true"`, `prometheus.io/port: "8081"`, `prometheus.io/path: /actuator/prometheus`. Add a `checksum/config` annotation.
+- **Backend Deployment**: env from the ConfigMap plus secretKeyRefs (`SPRING_DATASOURCE_PASSWORD`, `ERMS_JWT_SECRET`). `SPRING_DATASOURCE_URL=jdbc:mysql://erms-mysql:3306/erms?connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true`. initContainer `busybox:1.38` waits for `nc -z erms-mysql 3306` (same restricted securityContext). Probes on port `management` (8081): startupProbe `/actuator/health/liveness` (failureThreshold 30, period 5), livenessProbe `/actuator/health/liveness`, readinessProbe `/actuator/health/readiness`. `terminationGracePeriodSeconds: 30`, `preStop` `sleep 5`. Pod annotations `prometheus.io/scrape: "true"`, `prometheus.io/port: "8081"`, `prometheus.io/path: /actuator/prometheus`. Add a `checksum/config` annotation.
 - **Frontend Deployment**: env `BACKEND_URL=http://erms-backend:8080`. Probes `/healthz` on 8080. emptyDirs for `/tmp`, `/var/cache/nginx`, `/etc/nginx/conf.d`.
 - **Pod security** (all workloads): `runAsNonRoot: true`, `seccompProfile: RuntimeDefault`. Containers: `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]`, `readOnlyRootFilesystem: true` (backend + frontend, with emptyDir `/tmp`). backend uid 10001, frontend uid 10101, mysql `runAsUser/runAsGroup/fsGroup: 999` (mysql gets emptyDirs for `/var/run/mysqld` and `/tmp` if readOnlyRootFilesystem is set; a writable root is acceptable for mysql if needed, but document it).
 - **MySQL StatefulSet**: 1 replica, `volumeClaimTemplates` `data` → `/var/lib/mysql`, env `MYSQL_DATABASE`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_ROOT_PASSWORD` from the secret. Readiness/liveness via exec `mysqladmin ping -h 127.0.0.1 -uroot -p"$MYSQL_ROOT_PASSWORD"` (use `sh -c`).
@@ -433,9 +433,10 @@ Triggers: `pull_request` (branches: main), `push` (branches: main), `workflow_di
 | Job | Runs on | Steps |
 |---|---|---|
 | `backend` | ubuntu-latest | setup-java temurin 21 + maven cache → `./mvnw -B verify` → upload JaCoCo HTML + surefire/failsafe reports (always) |
-| `frontend` | ubuntu-latest | setup-node 24 + npm cache → `npm ci` → `lint` → `format:check` → `typecheck` → `test:coverage` → `build` → upload coverage |
+| `frontend` | ubuntu-latest | setup-node 26 + npm cache → `npm ci` → `lint` → `format:check` → `typecheck` → `test:coverage` → `build` → upload coverage |
 | `helm` | ubuntu-latest | setup-helm → `helm lint deploy/helm/erms -f deploy/helm/erms/values-local.yaml` → template with `--set backend.image.tag=ci --set frontend.image.tag=ci` → kubeconform |
 | `dockerfiles` | ubuntu-latest | hadolint for `backend/Dockerfile` and `frontend/Dockerfile` (`failure-threshold: warning`) |
+| `mysql-upgrade` | ubuntu-latest | `scripts/mysql-upgrade-test.sh`: seed on the base commit's MySQL, upgrade in place via `MYSQL_UPGRADE_VIA` LTS steps to the chart's version, verify version, `CHECK TABLE`, data checksums |
 | `security` | ubuntu-latest | Trivy `fs` scan (vuln, secret, misconfig; `severity: CRITICAL,HIGH`; `ignore-unfixed: true`) → SARIF upload (`permissions: security-events: write` on this job). Fails on CRITICAL |
 | `images` | ubuntu-latest, `needs: [backend, frontend, helm, dockerfiles, security]` | setup-qemu + setup-buildx → **on push to main**: login ghcr with `GITHUB_TOKEN` (`permissions: packages: write`), build-push both images, `platforms: linux/amd64,linux/arm64`, tags `ghcr.io/${{ github.repository_owner }}/erms-{backend,frontend}:${{ github.sha }}` and `:latest`, `cache-from/to: type=gha`, `provenance: true`, `sbom: true` → Trivy image scan of the pushed sha tag (fail on fixable CRITICAL). **On PR**: build linux/amd64 only with `push: false, load: true` and Trivy-scan the local image |
 

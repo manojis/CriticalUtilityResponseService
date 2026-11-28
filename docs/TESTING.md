@@ -5,7 +5,7 @@
 ```mermaid
 flowchart TB
     E2E["Deployment smoke + helm test<br/>(scripts/smoke-test.sh, in-cluster health)<br/>few, slow, real cluster"]
-    IT["Integration tests (*IT)<br/>Testcontainers MySQL 8.4 + Flyway + full Spring context"]
+    IT["Integration tests (*IT)<br/>Testcontainers MySQL 26.10 + Flyway + full Spring context"]
     SLICE["Web slice tests (@WebMvcTest) · React component tests (RTL + MSW)"]
     UNIT["Unit tests: services (Mockito), validators, JWT, API client, auth context<br/>many, fast"]
     E2E --> IT --> SLICE --> UNIT
@@ -16,7 +16,7 @@ flowchart TB
 |---|---|---|---|
 | Backend unit | JUnit 5, Mockito, AssertJ | Service rules: state transitions, authorization (owner/requester), validation edge cases, incident id formatting, `Clock`-based dates, JWT issue/verify, LIKE escaping | `backend/src/test/java/**/*Test.java` |
 | Backend web slice | `@WebMvcTest`, spring-security-test | HTTP status codes, ProblemDetail shape (`code`, `requestId`, `errors[]`), 401 without token, request binding/validation, JSON field names | `**/*ControllerTest.java` |
-| Backend integration | Testcontainers `mysql:8.4`, `@SpringBootTest`, `@ServiceConnection` | Flyway migrations apply; every repository SQL; search semantics (F1–F6); report (F10); full request lifecycle + DB constraints (F12–F18); 10-thread incident id concurrency (F8); transactional rollback (R6); login end-to-end | `**/*IT.java` |
+| Backend integration | Testcontainers `mysql:26.10.0.1`, `@SpringBootTest`, `@ServiceConnection` | Flyway migrations apply; every repository SQL; search semantics (F1–F6); report (F10); full request lifecycle + DB constraints (F12–F18); 10-thread incident id concurrency (F8); transactional rollback (R6); login end-to-end | `**/*IT.java` |
 | Frontend unit/component | Vitest 5, React Testing Library, user-event, MSW 2, jsdom | Validators (pure functions); session storage + JWT `exp`; AuthContext persist/expire/logout/401; ProtectedRoute; API client (Bearer header, 401 interceptor, ProblemDetail normalisation, query serialisation); `useApiData`; every page through the real route table with MSW (see [Frontend suite](#frontend-suite)) | `frontend/src/**/*.test.ts(x)` |
 | Static | Spotless, ESLint, Prettier, tsc, hadolint, actionlint, shellcheck, helm lint, kubeconform | Style, types, Dockerfile/workflow/script/chart correctness | CI jobs |
 | Security | Trivy (fs, image, misconfig, secrets), CodeQL, Dependabot | Vulnerable deps, IaC misconfig, leaked secrets, code-level vulns | CI |
@@ -40,7 +40,7 @@ cd backend && ./mvnw -B verify            # unit + IT + spotless + jacoco
 ./mvnw -B test                            # unit + slice only (fast)
 ./mvnw spotless:apply                     # auto-format
 
-# Frontend (Node 24+; Vitest + MSW, no backend needed)
+# Frontend (Node 26 in CI and the image; engines allow 24.15+; Vitest + MSW, no backend needed)
 cd frontend && npm ci
 npm run lint && npm run format:check && npm run typecheck && npm run test:coverage && npm run build
 npm run test:watch                        # watch mode while developing
@@ -70,7 +70,7 @@ Makefile targets (`make help` lists them all):
 `scripts/smoke-test.sh` retries with exponential backoff (up to `SMOKE_TIMEOUT`, default 60 s) and checks: `GET /` serves the SPA shell, `POST /api/v1/auth/login` as `alice`/`password` returns an `accessToken`, `GET /api/v1/me` returns `alice`, `GET /api/v1/esfs` returns 15 items, `GET /api/v1/me` without a token returns 401, and actuator health is not exposed through the public entry point. Override the user with `SMOKE_USER`/`SMOKE_PASSWORD`.
 
 ## Frontend suite
-All frontend tests run in jsdom with [MSW](https://mswjs.io) intercepting the SPA's real same-origin `/api/v1/...` calls, so the axios client, interceptors and ProblemDetail handling are exercised exactly as in production. `onUnhandledRequest: 'error'` makes any request without a handler fail the test.
+All frontend tests run in jsdom with [MSW](https://mswjs.io) intercepting the SPA's real same-origin `/api/v1/...` calls, so the axios client, interceptors and ProblemDetail handling are exercised exactly as in production. `onUnhandledFrame: 'error'` (msw 3) makes any request without a handler fail the test.
 
 | File | What it proves |
 |---|---|

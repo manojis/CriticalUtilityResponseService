@@ -26,7 +26,7 @@ flowchart TB
         MS[svc erms-mysql :3306<br/>+ erms-mysql-headless]
         FD[Deployment erms-frontend<br/>nginx-unprivileged uid 10101]
         BD[Deployment erms-backend<br/>Spring Boot uid 10001<br/>initContainer wait-for-mysql]
-        SS[StatefulSet erms-mysql<br/>mysql:8.4 uid 999]
+        SS[StatefulSet erms-mysql<br/>mysql:26.10 uid 999]
         PVC[(PVC data-erms-mysql-0<br/>local-path 2Gi)]
         SEC[[Secret erms-secrets]]
         CM[[ConfigMap erms-backend]]
@@ -138,12 +138,12 @@ Full list with comments: [`deploy/helm/erms/values.yaml`](../deploy/helm/erms/va
 | `backend.resources` | req 250m / 512Mi, limit 2 CPU / 1Gi | | |
 | `frontend.resources` | req 50m / 64Mi, limit 500m / 128Mi | | |
 | `mysql.enabled` | `true` | | In-chart MySQL StatefulSet |
-| `mysql.image.tag` | `8.4.13` | | Official `mysql` image |
+| `mysql.image.tag` | `26.10.0.1` | | Official `mysql` image |
 | `mysql.database` / `mysql.username` | `erms` / `erms` | | |
 | `mysql.readOnlyRootFilesystem` | `true` | | emptyDirs for `/var/run/mysqld` and `/tmp` |
 | `mysql.storage.size` / `mysql.storage.storageClass` | `2Gi` / `""` (cluster default) | `local-path` | PVC `data-erms-mysql-0` |
 | `mysql.resources` | req 250m / 512Mi, limit 1 CPU / 1Gi | | |
-| `waitForDb.image.tag` | `busybox:1.37.0` | | initContainer that waits for `erms-mysql:3306` |
+| `waitForDb.image.tag` | `busybox:1.38.0` | | initContainer that waits for `erms-mysql:3306` |
 | `secrets.existingSecret` | `""` | | Use a pre-created secret (keys `mysql-root-password`, `mysql-password`, `jwt-secret`) instead of the chart-managed `erms-secrets` |
 | `ingress.enabled` / `ingress.className` / `ingress.host` | `true` / `traefik` / `erms.localhost` | | Ingress (`/api` → backend:8080, `/` → frontend:8080) |
 | `ingress.annotations` / `ingress.tls` | `{}` / `[]` | | e.g. cert-manager annotations and TLS secret for production |

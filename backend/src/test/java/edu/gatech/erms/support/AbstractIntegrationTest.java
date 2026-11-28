@@ -27,7 +27,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 
 /**
  * Base class for full-stack integration tests: real Spring context, real security, Flyway-migrated
- * MySQL 8.4 (Testcontainers). Every test starts from an empty dataset (reference data kept).
+ * MySQL 26.10 (Testcontainers). Every test starts from an empty dataset (reference data kept).
  */
 @SpringBootTest
 @AutoConfigureMockMvc

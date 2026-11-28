@@ -26,6 +26,9 @@ Modernization of the legacy proof of concept into an industry-standard, deployab
 - Snake_case schema with foreign keys, CHECK constraints and indexes. Money and coordinates use `DECIMAL` (F22).
 - All dates are ISO `YYYY-MM-DD` `LocalDate` values, and "today" comes from an injected `Clock` (F9, R3).
 - Reference data endpoints return ordered arrays (F23). The frontend uses a relative `/api` base URL (R11, F24).
+- Dependencies: Spring Boot 4.2.0, springdoc 3.2.1, Maven 3.10.2; backend runtime image Java 25 (`eclipse-temurin:25-jre-alpine`, bytecode stays Java 21); frontend CI and build on Node 26, react-router 8, msw 3, `@types/node` 26; busybox 1.38.0.
+- MySQL 8.4 LTS → 26.10 (chart, docker compose, Testcontainers). Existing volumes must step through 9.7 LTS first ([RUNBOOK](docs/RUNBOOK.md) procedure 14); the new CI job `mysql-upgrade` tests the in-place upgrade on every change.
+- Dependabot ignores TypeScript 7 until typescript-eslint supports it.
 
 ### Removed
 - Create React App, `react-scripts`, `yarn.lock`, `styled-components` and `@material-ui/*`.
@@ -37,6 +40,7 @@ Modernization of the legacy proof of concept into an industry-standard, deployab
 - Connection, statement and result-set leaks, and thread-unsafe singleton state (R1, R2, R4, R5).
 - Multi-step writes are now transactional (R6). Null capability or ESF lists no longer cause an NPE (R7).
 - Keyword, ESF and combined search semantics (F1, F2, F3, F5), distance filtering for co-located resources and unlimited ranges (F4), and ordering by distance (F6).
+- ProblemDetail `instance` is set explicitly from the request path (Spring Framework 7.1 no longer fills it).
 - Incident latitude/longitude swap (F7). Incident IDs are generated server-side under a row lock (F8).
 - The resource report query fails no more on MySQL 8 and the totals are correct (F10, F11).
 - Request lifecycle defects: return touches only the target request (F12), no double deployment (F13), re-requests after reject/return (F14), reject no longer corrupts availability (F15), cancel keeps the audit trail (F16), received/in-use lists filter by status (F17, F18).

@@ -151,9 +151,23 @@ make runner-setup                                               # idempotent rep
 ### 13. Verify the NetworkPolicy (QA)
 A throwaway pod without the backend label must not reach MySQL. The namespace enforces Pod Security `restricted`, so the pod needs a compliant spec:
 ```bash
-k run np-probe --rm -i --restart=Never --image=busybox:1.37.0 --overrides='{"apiVersion":"v1","spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":65534,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"np-probe","image":"busybox:1.37.0","command":["sh","-c","if nc -z -w 3 erms-mysql 3306; then echo REACHABLE; else echo BLOCKED; fi"],"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}}}]}}'
+k run np-probe --rm -i --restart=Never --image=busybox:1.38.0 --overrides='{"apiVersion":"v1","spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":65534,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"np-probe","image":"busybox:1.37.0","command":["sh","-c","if nc -z -w 3 erms-mysql 3306; then echo REACHABLE; else echo BLOCKED; fi"],"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}}}]}}'
 # expect: BLOCKED
 ```
+
+### 14. Upgrading MySQL
+The StatefulSet upgrades the data directory in place when `mysql.image.tag` changes (the server logs `Server upgrade from '…' to '…' completed`). MySQL only allows this **within a release lineage or from the immediately preceding LTS**, and **never downgrades**: 8.4 LTS → 9.7 LTS → 26.x Innovation. A skipped LTS aborts at startup with `Invalid MySQL server upgrade` (the data is untouched; roll back the tag).
+
+1. Back up first (procedure 8). Rollback after an upgrade means restoring this dump into a fresh volume.
+2. If the deployed version is more than one LTS behind the new tag, step through each LTS first, for example from 8.4:
+   ```bash
+   h upgrade erms deploy/helm/erms --reuse-values --set mysql.image.tag=9.7.4.1 --wait
+   k logs erms-mysql-0 | grep -E 'upgrade|ERROR'    # expect "Server upgrade from '80413' to '90704' completed"
+   ```
+3. Deploy the new version as usual (merge to main, approve the CD run). `make deploy-local` does the same for local builds.
+4. Check: `k exec erms-mysql-0 -- sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot -e "SELECT VERSION()"'`, then `make smoke`.
+
+CI tests the same path on every change (`mysql-upgrade` job: `scripts/mysql-upgrade-test.sh <deployed> [<LTS> …] <new>`). Run it locally with `scripts/mysql-upgrade-test.sh 8.4.13 9.7.4.1 26.10.0.1`. For docker compose, a volume from an older lineage needs the same LTS steps, or `docker compose down -v` to start fresh.
 
 ## Known failure modes
 | Symptom | Cause | Fix |
@@ -166,4 +180,5 @@ k run np-probe --rm -i --restart=Never --image=busybox:1.37.0 --overrides='{"api
 | Everything down after a Mac restart | Rancher Desktop not started | Start Rancher Desktop; pods recover automatically (PVC keeps data) |
 | Pods rejected with `violates PodSecurity "restricted"` | A manual `kubectl run`/debug pod without a restricted securityContext | Use a compliant spec (see procedure 13) |
 | backend `CrashLoopBackOff` with `Access denied for user 'erms'` | `erms-secrets` was deleted/recreated but the PVC kept the old password | Restore the old secret, or reset the environment (procedure 10) |
+| mysql `CrashLoopBackOff`, log `Invalid MySQL server upgrade: Cannot upgrade from …` | New `mysql.image.tag` skips an LTS (or is a downgrade) | Roll back the tag (`h rollback erms`), then step through the LTS (procedure 14) |
 | `helm upgrade` fails with `another operation (install/upgrade/rollback) is in progress` | A previous run was interrupted | `h history erms`; `h rollback erms <last deployed revision>` |

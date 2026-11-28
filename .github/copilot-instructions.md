@@ -8,7 +8,7 @@ ERMS (Emergency Resource Management System) is a monorepo: Spring Boot API in `b
 
 ## Build, test, lint
 
-Backend (Java 21, always use the wrapper `./mvnw`; integration tests need Docker for Testcontainers):
+Backend (Java 21 bytecode on a Java 25 runtime image, always use the wrapper `./mvnw`; integration tests need Docker for Testcontainers):
 
 ```bash
 make be-test     # cd backend && ./mvnw -B -ntp verify  → Spotless check + unit + ITs + JaCoCo gates
@@ -21,7 +21,7 @@ cd backend && ./mvnw -B verify -Dtest=none -Dsurefire.failIfNoSpecifiedTests=fal
 
 On Rancher Desktop, raw `./mvnw` runs of ITs need `DOCKER_HOST=unix://$HOME/.rd/docker.sock TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock` (`make be-test` sets these automatically).
 
-Frontend (Node 24, `npm ci` with the committed lockfile; no backend needed for tests — MSW mocks the API):
+Frontend (Node 26, `npm ci` with the committed lockfile; no backend needed for tests — MSW mocks the API):
 
 ```bash
 make fe-test     # npm run lint && format:check && typecheck && test:coverage
@@ -50,7 +50,7 @@ Coverage gates fail the build: backend JaCoCo (unit + IT merged) ≥ 80% lines o
 
 ## Backend tests
 
-- `*Test` → Surefire (unit with Mockito, and web slices); `*IT` → Failsafe (Testcontainers MySQL 8.4, in `src/test/java/.../it/`).
+- `*Test` → Surefire (unit with Mockito, and web slices); `*IT` → Failsafe (Testcontainers MySQL 26.10, in `src/test/java/.../it/`).
 - Web slice tests use the `@ErmsWebMvcTest(SomeController.class)` meta-annotation (real `SecurityConfig`, `test` profile) rather than bare `@WebMvcTest`.
 - ITs extend `support/AbstractIntegrationTest`, which wipes all non-reference tables before each test and provides helpers (`createUser`, `bearer`, `as`, `postJson`, `createIncident`, `createResource`, `requestResource`, `action`). ITs create their own data — never depend on the demo seed. Use `support/MutableClock` to control dates.
 - Regression tests for legacy defects (IDs in `docs/ARCHITECTURE.md` §6) are named after the defect, e.g. `keywordSearch_findsResourceWithoutCapabilities_F1`.
